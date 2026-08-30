@@ -32,14 +32,16 @@
     "type": "app",
     "name": "千问办公",
     "icon": "",
-    "path": "D:\\Users\\15366\\AppData\\Local\\Programs\\QwenWorkCN\\Launcher.exe"
+    "path": "D:\\Users\\15366\\AppData\\Local\\Programs\\QwenWorkCN\\Launcher.exe",
+    "iconType": "letter"
   },
   {
     "id": "shortcut-1788087922846",
     "type": "app",
     "name": "WorkBuddy",
     "icon": "",
-    "path": "D:\\Users\\15366\\AppData\\Local\\Programs\\WorkBuddy\\WorkBuddy.exe"
+    "path": "D:\\Users\\15366\\AppData\\Local\\Programs\\WorkBuddy\\WorkBuddy.exe",
+    "iconType": "letter"
   },
   {
     "id": "shortcut-1788087803234",
@@ -88,6 +90,23 @@
     "type": "app",
     "name": "Hyperdown",
     "icon": "",
-    "path": "D:\\DDL\\Hyperdown\\Hyperdown.exe"
+    "path": "D:\\DDL\\Hyperdown\\Hyperdown.exe",
+    "iconType": "letter"
+  },
+  {
+    "id": "shortcut-1788095128650",
+    "type": "app",
+    "name": "sunwoo录屏大师",
+    "iconType": "letter",
+    "icon": "",
+    "path": "D:\\Users\\15366\\AppData\\Local\\sunwoo录屏大师\\sunwoo-cap.exe"
+  },
+  {
+    "id": "shortcut-1788095754726",
+    "type": "folder",
+    "name": "截图",
+    "iconType": "auto",
+    "icon": "",
+    "path": "D:\\临时数据\\pinpix\\截图"
   }
 ]

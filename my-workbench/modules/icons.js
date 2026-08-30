@@ -29,18 +29,33 @@ const ICONS = {
   loading:  '<circle cx="12" cy="12" r="10" stroke-dasharray="31.4 31.4" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite"/></circle>',
   tag:      '<circle cx="12" cy="12" r="10"/><line x1="14" y1="8" x2="20" y2="8"/><line x1="10" y1="12" x2="20" y2="12"/><line x1="6" y1="16" x2="20" y2="16"/>',
   external: '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>',
-  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>'
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>',
+  // 实心文件夹图标（1024 视口，填充 currentColor 以适配主题）
+  'folder-fill': {
+    viewBox: '0 0 1024 1024',
+    fill: 'currentColor',
+    body: '<path d="M912 208H427.872l-50.368-94.176A63.936 63.936 0 0 0 321.056 80H112c-35.296 0-64 28.704-64 64v736c0 35.296 28.704 64 64 64h800c35.296 0 64-28.704 64-64v-608c0-35.296-28.704-64-64-64z m-800-64h209.056l68.448 128H912v97.984c-0.416 0-0.8-0.128-1.216-0.128H113.248c-0.416 0-0.8 0.128-1.248 0.128V144z m0 736v-96l1.248-350.144 798.752 1.216V784h0.064v96H112z"/>'
+  }
 };
 
 /**
  * 生成内联 SVG 字符串
+ * 图标定义支持两种形式：
+ *   - 字符串：24×24 视口、线性 stroke 风格（Feather）
+ *   - 对象 { viewBox, fill, body }：自定义视口与填充，用于实心图标
  * @param {string} name 图标名（ICONS 中的键）
  * @param {number} size 图标尺寸（像素）
  * @returns {string} SVG 字符串
  */
 function svgIcon(name, size = 18) {
-  const body = ICONS[name] || '';
-  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
+  const def = ICONS[name];
+  if (!def) return '';
+  // 对象形式：实心图标，自定义 viewBox 与填充
+  if (typeof def === 'object') {
+    return `<svg viewBox="${def.viewBox}" width="${size}" height="${size}" fill="${def.fill || 'currentColor'}" stroke="none">${def.body}</svg>`;
+  }
+  // 字符串形式：24×24 线性图标
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${def}</svg>`;
 }
 
 // 挂到全局，供 renderer.js 的 UI.icon 与各模块使用

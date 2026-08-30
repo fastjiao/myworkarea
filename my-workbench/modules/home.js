@@ -124,9 +124,9 @@ window.Home = {
     card.addEventListener('dragstart', (e) => this._onDragStart(e, item));
     card.addEventListener('dragend', () => this._clearDrag());
 
-    // 文件 / 文件夹 / 网页 类型标签
-    if (item.type === 'file' || item.type === 'folder' || item.type === 'web') {
-      const label = item.type === 'file' ? '文件' : (item.type === 'folder' ? '文件夹' : '网页');
+    // 文件 / 网页 类型标签（文件夹用图标即可区分，不显示文字标签）
+    if (item.type === 'file' || item.type === 'web') {
+      const label = item.type === 'file' ? '文件' : '网页';
       const cls = item.type === 'web' ? 'web' : item.type;
       card.appendChild(UI.el('span', 'shortcut-tag ' + cls, label));
     }
@@ -206,7 +206,7 @@ window.Home = {
   /** 返回条目对应的默认图标名 */
   _defaultIconName(item) {
     if (item.type === 'app') return 'app';
-    if (item.type === 'folder') return 'folder';
+    if (item.type === 'folder') return 'folder-fill';
     if (item.type === 'web') return 'external';
     return 'file';
   },
