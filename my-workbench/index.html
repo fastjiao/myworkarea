@@ -14,6 +14,17 @@
 
 <body data-theme="light">
 
+  <!--
+    科技感背景层（z-index 位于最底层，内容区在其上方）：
+    - 渐变蓝灰背景墙
+    - 全息几何网格线
+    - 微光粒子 + 动态数据流 canvas
+  -->
+  <div class="tech-backdrop" aria-hidden="true">
+    <div class="tech-grid"></div>
+    <canvas id="fx-canvas" class="fx-canvas"></canvas>
+  </div>
+
   <!-- 应用整体布局：左侧固定侧边栏 + 右侧主内容区 -->
   <div class="app-layout">
 
@@ -24,9 +35,13 @@
 
       <!-- 导航菜单：data-page 属性关联对应页面，data-icon 关联 SVG 图标 -->
       <nav class="sidebar-nav">
-        <button class="nav-item active" data-page="home">
+        <button class="nav-item active" data-page="dashboard">
           <span class="nav-icon" data-icon="home"></span>
           <span class="nav-label">首页</span>
+        </button>
+        <button class="nav-item" data-page="home">
+          <span class="nav-icon" data-icon="app"></span>
+          <span class="nav-label">快捷启动</span>
         </button>
         <button class="nav-item" data-page="sign">
           <span class="nav-icon" data-icon="flag"></span>
@@ -36,13 +51,13 @@
           <span class="nav-icon" data-icon="calendar"></span>
           <span class="nav-label">日历</span>
         </button>
-        <button class="nav-item" data-page="skills">
-          <span class="nav-icon" data-icon="search"></span>
-          <span class="nav-label">all Skills</span>
-        </button>
         <button class="nav-item" data-page="skill-finder">
           <span class="nav-icon" data-icon="compass"></span>
           <span class="nav-label">技能发现</span>
+        </button>
+        <button class="nav-item" data-page="skills">
+          <span class="nav-icon" data-icon="search"></span>
+          <span class="nav-label">全部技能</span>
         </button>
 
       </nav>
@@ -57,7 +72,8 @@
     <div class="main-area">
       <main class="app-main">
         <!-- 页面容器，内容由对应模块 JS 动态渲染 -->
-        <section id="page-home" class="page active"></section>
+        <section id="page-dashboard" class="page active"></section>
+        <section id="page-home" class="page"></section>
         <section id="page-calendar" class="page"></section>
         <section id="page-skills" class="page"></section>
         <section id="page-skill-finder" class="page"></section>
@@ -81,7 +97,9 @@
   <div id="context-menu" class="context-menu" hidden>
     <ul>
       <li id="menu-open">打开</li>
+      <li id="menu-edit">修改</li>
       <li id="menu-remove" class="danger">删除</li>
+      <li id="menu-property">属性</li>
     </ul>
   </div>
 
@@ -91,6 +109,7 @@
     renderer.js 最后加载，定义 Store / UI 工具并触发各模块初始化。
   -->
   <script src="modules/icons.js"></script>
+  <script src="modules/dashboard.js"></script>
   <script src="modules/home.js"></script>
   <script src="modules/calendar.js"></script>
   <script src="modules/skills.js"></script>

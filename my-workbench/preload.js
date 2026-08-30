@@ -24,11 +24,31 @@ contextBridge.exposeInMainWorld('workbench', {
   openPath: (targetPath) => ipcRenderer.invoke('open-path', targetPath),
 
   /**
+   * 打开外部网页链接（交给系统默认浏览器）
+   * @param {string} url 目标网址
+   * @returns {Promise<{success: boolean, message: string}>} 打开结果
+   */
+  openUrl: (url) => ipcRenderer.invoke('open-url', url),
+
+  /**
    * 弹出系统文件选择对话框，让用户选择文件或文件夹
    * @param {'file'|'folder'} kind 选择类型：'folder' 选文件夹，其它选文件
    * @returns {Promise<{canceled: boolean, path?: string}>} 选择结果
    */
   selectPath: (kind) => ipcRenderer.invoke('select-path', kind),
+
+  /**
+   * 选择本地图片作为快捷方式图标（弹出对话框并转成 data URL）
+   * @returns {Promise<{canceled: boolean, path?: string, success?: boolean, dataUrl?: string, message?: string}>}
+   */
+  selectImage: () => ipcRenderer.invoke('select-image'),
+
+  /**
+   * 读取文件关联图标（默认用于 .exe 软件图标）
+   * @param {string} filePath 文件完整路径
+   * @returns {Promise<string>} PNG 图标的 data URL，失败时为空字符串
+   */
+  getFileIcon: (filePath) => ipcRenderer.invoke('get-file-icon', filePath),
 
   /**
    * 读取某个数据文件的内容

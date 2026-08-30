@@ -10,7 +10,7 @@
 // 说明：主进程只负责「系统层面」的操作，不参与任何界面渲染逻辑
 // =====================================================================
 
-const { app, BrowserWindow, ipcMain, dialog, shell, session, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, session, screen, Menu } = require('electron');
 const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -357,10 +357,116 @@ ipcMain.handle('select-path', async (event, kind) => {
 });
 
 /**
+ * 把本地图片文件读成 data URL（用于自定义快捷方式图标）
+ * @param {string} filePath 图片文件路径
+ * @returns {{success: boolean, dataUrl?: string, message?: string}}
+ */
+function readImageDataUrl(filePath) {
+  const ext = path.extname(filePath || '').toLowerCase();
+  const MIME = {
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif', '.ico': 'image/x-icon', '.webp': 'image/webp',
+    '.bmp': 'image/bmp', '.svg': 'image/svg+xml'
+  };
+  if (!MIME[ext]) {
+    return { success: false, message: '仅支持图片文件（png/jpg/gif/ico/webp/bmp/svg）' };
+  }
+  try {
+    const buf = fs.readFileSync(filePath);
+    if (buf.length > 2 * 1024 * 1024) {
+      return { success: false, message: '图片过大（限 2MB）' };
+    }
+    return { success: true, dataUrl: `data:${MIME[ext]};base64,${buf.toString('base64')}` };
+  } catch (err) {
+    return { success: false, message: '读取图片失败：' + err.message };
+  }
+}
+
+/**
+ * 选择本地图片作为快捷方式图标：弹出对话框 → 读取并转 data URL
+ * @returns {Promise<{canceled: boolean, path?: string, success?: boolean, dataUrl?: string, message?: string}>}
+ */
+ipcMain.handle('select-image', async (event) => {
+  const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+  const result = await dialog.showOpenDialog(win, {
+    title: '选择图标图片',
+    properties: ['openFile'],
+    filters: [{ name: '图片文件', extensions: ['png', 'jpg', 'jpeg', 'gif', 'ico', 'webp', 'bmp', 'svg'] }]
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return { canceled: true };
+  }
+  const filePath = result.filePaths[0];
+  const read = readImageDataUrl(filePath);
+  return { canceled: false, path: filePath, ...read };
+});
+
+/**
+ * 读取文件关联图标（用于首页快捷方式）
+ * 说明：利用系统 shell 关联，Windows 下对 .exe 会提取其内嵌图标，
+ *       实现「类似 Windows 更改快捷方式图标」的默认图标效果。
+ *       对于纯命令名（如 notepad.exe），先用 where 解析为完整路径再读取。
+ *       返回 PNG 的 data URL；读取失败或文件不存在时返回空字符串。
+ * @param {string} filePath 文件完整路径（如 C:\App\app.exe）或命令名
+ */
+ipcMain.handle('get-file-icon', async (event, filePath) => {
+  if (!filePath || typeof filePath !== 'string' || filePath.trim() === '') {
+    return '';
+  }
+  let p = filePath.trim();
+  // 纯命令名（不含路径分隔符）：用 where 解析完整路径，提高图标读取成功率
+  if (!/[\\/]/.test(p)) {
+    p = await resolveCommandPath(p);
+  }
+  try {
+    const img = await app.getFileIcon(p, { size: 'large' });
+    return img && !img.isEmpty() ? img.toDataURL() : '';
+  } catch (err) {
+    return '';
+  }
+});
+
+/**
+ * 用 where 把命令名解析为完整路径（找不到则返回原值）
+ * @param {string} cmd 命令名
+ * @returns {Promise<string>}
+ */
+function resolveCommandPath(cmd) {
+  return new Promise((resolve) => {
+    exec(`where "${cmd}"`, { windowsHide: true }, (error, stdout) => {
+      if (error || !stdout) return resolve(cmd);
+      const first = stdout.split(/\r?\n/).map((s) => s.trim()).find(Boolean);
+      resolve(first || cmd);
+    });
+  });
+}
+
+/**
  * 读取某个数据文件的内容
  */
 ipcMain.handle('data:read', async (event, filename) => {
   return readData(filename);
+});
+
+/**
+ * 打开外部网页链接（交给系统默认浏览器）
+ * 说明：自动补齐 http/https 前缀；用于首页「网页快捷方式」。
+ * @param {string} url 目标网址
+ */
+ipcMain.handle('open-url', async (event, url) => {
+  if (!url || typeof url !== 'string' || url.trim() === '') {
+    return { success: false, message: '链接不能为空' };
+  }
+  let target = url.trim();
+  if (!/^https?:\/\//i.test(target)) {
+    target = 'https://' + target;
+  }
+  try {
+    await shell.openExternal(target);
+    return { success: true, message: '已打开链接' };
+  } catch (err) {
+    return { success: false, message: `打开失败：${err.message}` };
+  }
 });
 
 /**
@@ -1380,8 +1486,78 @@ ipcMain.handle('sign:ps-templates', async () => {
 // ---------------------------------------------------------------------
 
 // 当 Electron 初始化完成后创建窗口，并确保数据目录存在
+/**
+ * 构建中文应用菜单（替换 Electron 默认的 File/Edit/View/Window 英文菜单）
+ * label 用中文，role 保留原有功能与快捷键
+ */
+function buildChineseMenu() {
+  const template = [
+    {
+      label: '文件',
+      submenu: [
+        { role: 'quit', label: '退出' }
+      ]
+    },
+    {
+      label: '编辑',
+      submenu: [
+        { role: 'undo', label: '撤销' },
+        { role: 'redo', label: '重做' },
+        { type: 'separator' },
+        { role: 'cut', label: '剪切' },
+        { role: 'copy', label: '复制' },
+        { role: 'paste', label: '粘贴' },
+        { role: 'pasteAndMatchStyle', label: '粘贴并匹配样式' },
+        { role: 'delete', label: '删除' },
+        { type: 'separator' },
+        { role: 'selectAll', label: '全选' }
+      ]
+    },
+    {
+      label: '视图',
+      submenu: [
+        { role: 'reload', label: '重新加载' },
+        { role: 'forceReload', label: '强制重新加载' },
+        { role: 'toggleDevTools', label: '开发者工具' },
+        { type: 'separator' },
+        { role: 'resetZoom', label: '重置缩放' },
+        { role: 'zoomIn', label: '放大' },
+        { role: 'zoomOut', label: '缩小' },
+        { type: 'separator' },
+        { role: 'togglefullscreen', label: '全屏' }
+      ]
+    },
+    {
+      label: '窗口',
+      submenu: [
+        { role: 'minimize', label: '最小化' },
+        { role: 'maximize', label: '最大化' },
+        { role: 'close', label: '关闭窗口' }
+      ]
+    },
+    {
+      label: '帮助',
+      submenu: [
+        {
+          label: '关于',
+          click: () => {
+            dialog.showMessageBox({
+              type: 'info',
+              title: '关于',
+              message: 'jiao公台',
+              detail: '个人工作台桌面应用 v2.0.0'
+            });
+          }
+        }
+      ]
+    }
+  ];
+  return Menu.buildFromTemplate(template);
+}
+
 app.whenReady().then(() => {
   ensureDataDir();
+  Menu.setApplicationMenu(buildChineseMenu());
   createWindow();
 
   // macOS 上点击 Dock 图标且没有窗口时，重新创建窗口（其他平台不触发）

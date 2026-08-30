@@ -1,8 +1,92 @@
 [
   {
-    "id": "shortcut-1788052519820",
+    "id": "shortcut-1788087960633",
     "type": "app",
-    "name": "hyperdonw",
+    "name": "微信",
+    "icon": "",
+    "path": "D:\\文件\\2601292228微信\\安装\\Weixin\\Weixin.exe"
+  },
+  {
+    "id": "shortcut-1788091009387",
+    "type": "app",
+    "name": "QQ",
+    "icon": "",
+    "path": "D:\\Program Files\\Tencent\\QQNT\\QQ.exe"
+  },
+  {
+    "id": "shortcut-1788087662205",
+    "type": "app",
+    "name": "千问",
+    "icon": "",
+    "path": "D:\\Users\\15366\\AppData\\Local\\Programs\\QianwenApp\\qianwen.exe"
+  },
+  {
+    "id": "shortcut-1788087761630",
+    "type": "app",
+    "name": "VS code",
+    "icon": "",
+    "path": "D:\\Users\\15366\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe"
+  },
+  {
+    "id": "shortcut-1788087901828",
+    "type": "app",
+    "name": "千问办公",
+    "icon": "",
+    "path": "D:\\Users\\15366\\AppData\\Local\\Programs\\QwenWorkCN\\Launcher.exe"
+  },
+  {
+    "id": "shortcut-1788087922846",
+    "type": "app",
+    "name": "WorkBuddy",
+    "icon": "",
+    "path": "D:\\Users\\15366\\AppData\\Local\\Programs\\WorkBuddy\\WorkBuddy.exe"
+  },
+  {
+    "id": "shortcut-1788087803234",
+    "type": "app",
+    "name": "夸克网盘",
+    "icon": "",
+    "path": "D:\\Users\\15366\\AppData\\Local\\Programs\\QuarkCloudDrive\\quark_cloud_drive.exe"
+  },
+  {
+    "id": "shortcut-1788087993572",
+    "type": "app",
+    "name": "vm虚拟机",
+    "icon": "",
+    "path": "D:\\文件\\2601301414    VM虚拟机\\安装\\vmware.exe"
+  },
+  {
+    "id": "shortcut-1788088015263",
+    "type": "app",
+    "name": "Everything",
+    "icon": "",
+    "path": "D:\\文件\\2601302049    Everything\\安装\\Everything\\Everything.exe"
+  },
+  {
+    "id": "shortcut-1788088041880",
+    "type": "app",
+    "name": "Steam++",
+    "icon": "",
+    "path": "D:\\文件\\2602061847    steam++\\az\\Steam++\\Steam++.exe"
+  },
+  {
+    "id": "shortcut-1788088065579",
+    "type": "app",
+    "name": "windhawk",
+    "icon": "",
+    "path": "D:\\文件\\2602282041    windhawk\\Windhawk\\windhawk.exe"
+  },
+  {
+    "id": "shortcut-1788088086249",
+    "type": "app",
+    "name": "网易云音乐",
+    "icon": "",
+    "path": "D:\\文件\\2605021141    网易云音乐\\安装\\cloudmusic.exe"
+  },
+  {
+    "id": "shortcut-1788090923935",
+    "type": "app",
+    "name": "Hyperdown",
     "icon": "",
     "path": "D:\\DDL\\Hyperdown\\Hyperdown.exe"
   }
