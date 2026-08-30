@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>坐标拾取</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: rgba(15, 23, 42, 0.08);   /* 轻微遮罩，提示处于拾取模式 */
+    cursor: crosshair;
+    user-select: none;
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+  }
+
+  /* 十字线 */
+  #h-line, #v-line {
+    position: fixed;
+    background: rgba(59, 130, 246, 0.85);
+    pointer-events: none;
+    z-index: 9998;
+    box-shadow: 0 0 6px rgba(59, 130, 246, 0.6);
+  }
+  #h-line { left: 0; right: 0; height: 1px; top: 0; }
+  #v-line { top: 0; bottom: 0; width: 1px; left: 0; }
+
+  /* 鼠标处的坐标环 */
+  #dot {
+    position: fixed;
+    width: 10px; height: 10px;
+    border: 2px solid #3b82f6;
+    border-radius: 50%;
+    background: rgba(59, 130, 246, 0.25);
+    pointer-events: none;
+    z-index: 9999;
+    transform: translate(-50%, -50%);
+  }
+
+  /* 顶部提示条 */
+  #tip {
+    position: fixed;
+    top: 24px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(15, 23, 42, 0.92);
+    color: #e2e8f0;
+    padding: 12px 22px;
+    border-radius: 10px;
+    font-size: 14px;
+    line-height: 1.6;
+    z-index: 10000;
+    pointer-events: none;
+    border: 1px solid rgba(59, 130, 246, 0.5);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+    text-align: center;
+  }
+  #tip b { color: #7dd3fc; }
+  #tip .key {
+    display: inline-block;
+    background: rgba(59, 130, 246, 0.25);
+    border: 1px solid rgba(59, 130, 246, 0.6);
+    border-radius: 4px;
+    padding: 0 6px;
+    margin: 0 2px;
+    font-family: Consolas, monospace;
+    color: #93c5fd;
+  }
+
+  /* 跟随鼠标的坐标标签 */
+  #coord {
+    position: fixed;
+    background: rgba(15, 23, 42, 0.92);
+    color: #7dd3fc;
+    padding: 5px 12px;
+    border-radius: 6px;
+    font: 13px Consolas, "Cascadia Code", monospace;
+    z-index: 10000;
+    pointer-events: none;
+    border: 1px solid rgba(59, 130, 246, 0.4);
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+  <div id="tip">
+    移动鼠标到<b>目标按钮</b>上，点击<span class="key">左键</span>确认坐标<br>
+    按 <span class="key">ESC</span> 或<span class="key">右键</span>取消
+  </div>
+  <div id="h-line"></div>
+  <div id="v-line"></div>
+  <div id="dot"></div>
+  <div id="coord">(0, 0)</div>
+
+<script>
+  const hLine = document.getElementById('h-line');
+  const vLine = document.getElementById('v-line');
+  const dot = document.getElementById('dot');
+  const coord = document.getElementById('coord');
+
+  // 十字线 + 坐标跟随鼠标
+  document.addEventListener('mousemove', (e) => {
+    hLine.style.top = e.clientY + 'px';
+    vLine.style.left = e.clientX + 'px';
+    dot.style.left = e.clientX + 'px';
+    dot.style.top = e.clientY + 'px';
+
+    // 标签放在鼠标右下方，靠近屏幕边缘时自动翻转
+    const labelX = e.clientX + 18;
+    const labelY = e.clientY + 18;
+    coord.style.left = Math.min(labelX, window.innerWidth - 120) + 'px';
+    coord.style.top = Math.min(labelY, window.innerHeight - 40) + 'px';
+    coord.textContent = '(' + e.screenX + ', ' + e.screenY + ')';
+  });
+
+  // 左键确认 —— 实际坐标由主进程 screen.getCursorScreenPoint() 采集
+  document.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    window.workbench._pickerConfirm();
+  });
+
+  // ESC 取消
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      window.workbench._pickerCancel();
+    }
+  });
+
+  // 右键取消
+  document.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    window.workbench._pickerCancel();
+  });
+</script>
+</body>
+</html>

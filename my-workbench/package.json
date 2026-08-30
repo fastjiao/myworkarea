@@ -1,0 +1,67 @@
+{
+  "name": "jiao-workbench",
+  "version": "2.0.0",
+  "description": "jiao公台桌面客户端：软件快捷启动、文件/文件夹打开、日历与待办、技能查找、AI技能发现",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder build --win --x64",
+    "pack": "electron-builder build --win --x64 --dir"
+  },
+  "build": {
+    "appId": "com.jiaogongtai.workbench",
+    "productName": "jiao公台",
+    "directories": {
+      "output": "../jiao-release"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-v${version}-portable.${ext}"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer.js",
+      "index.html",
+      "styles.css",
+      "modules/**/*",
+      "data/**/*",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "data/",
+        "to": "data/",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "asar": true
+  },
+  "keywords": [
+    "electron",
+    "workbench",
+    "dashboard",
+    "launcher"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "duckduckgo-websearch": "^2.0.3",
+    "openai": "^4.73.0"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
+    "electron-packager": "^17.1.2"
+  }
+}

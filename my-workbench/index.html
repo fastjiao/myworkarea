@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- 内容安全策略：只允许加载本地脚本与样式，提升安全性 -->
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+  <title>jiao公台</title>
+  <!-- 引入全局样式 -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body data-theme="light">
+
+  <!-- 应用整体布局：左侧固定侧边栏 + 右侧主内容区 -->
+  <div class="app-layout">
+
+    <!-- ===================== 左侧侧边栏 ===================== -->
+    <aside class="sidebar">
+      <!-- 品牌标识 -->
+      <div class="sidebar-brand">教公台</div>
+
+      <!-- 导航菜单：data-page 属性关联对应页面，data-icon 关联 SVG 图标 -->
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-page="home">
+          <span class="nav-icon" data-icon="home"></span>
+          <span class="nav-label">首页</span>
+        </button>
+        <button class="nav-item" data-page="sign">
+          <span class="nav-icon" data-icon="flag"></span>
+          <span class="nav-label">一键签到</span>
+        </button>
+        <button class="nav-item" data-page="calendar">
+          <span class="nav-icon" data-icon="calendar"></span>
+          <span class="nav-label">日历</span>
+        </button>
+        <button class="nav-item" data-page="skills">
+          <span class="nav-icon" data-icon="search"></span>
+          <span class="nav-label">all Skills</span>
+        </button>
+        <button class="nav-item" data-page="skill-finder">
+          <span class="nav-icon" data-icon="compass"></span>
+          <span class="nav-label">技能发现</span>
+        </button>
+
+      </nav>
+
+      <!-- 侧边栏底部：主题切换 -->
+      <div class="sidebar-footer">
+        <button id="theme-toggle" class="theme-toggle">暗色模式</button>
+      </div>
+    </aside>
+
+    <!-- ===================== 右侧主内容区 ===================== -->
+    <div class="main-area">
+      <main class="app-main">
+        <!-- 页面容器，内容由对应模块 JS 动态渲染 -->
+        <section id="page-home" class="page active"></section>
+        <section id="page-calendar" class="page"></section>
+        <section id="page-skills" class="page"></section>
+        <section id="page-skill-finder" class="page"></section>
+        <section id="page-sign" class="page"></section>
+      </main>
+    </div>
+  </div>
+
+  <!-- 通用模态框：内容由 JS 动态填充，供添加/编辑表单复用 -->
+  <div id="modal-overlay" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-labelledby="modal-title">
+      <div class="modal-header">
+        <h2 id="modal-title" class="modal-title"></h2>
+        <button id="modal-close" class="modal-close" title="关闭"></button>
+      </div>
+      <div id="modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- 右键菜单：用于打开 / 删除快捷方式 -->
+  <div id="context-menu" class="context-menu" hidden>
+    <ul>
+      <li id="menu-open">打开</li>
+      <li id="menu-remove" class="danger">删除</li>
+    </ul>
+  </div>
+
+  <!--
+    脚本加载顺序说明：
+    模块文件先加载，只在顶层向 window 挂载对象；
+    renderer.js 最后加载，定义 Store / UI 工具并触发各模块初始化。
+  -->
+  <script src="modules/icons.js"></script>
+  <script src="modules/home.js"></script>
+  <script src="modules/calendar.js"></script>
+  <script src="modules/skills.js"></script>
+  <script src="modules/skill-finder.js"></script>
+  <script src="modules/sign.js"></script>
+  <script src="renderer.js"></script>
+</body>
+
+</html>
