@@ -10,7 +10,7 @@
 // 说明：主进程只负责「系统层面」的操作，不参与任何界面渲染逻辑
 // =====================================================================
 
-const { app, BrowserWindow, ipcMain, dialog, shell, session, screen, Menu, net } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, session, screen, Menu, net, Tray, nativeImage } = require('electron');
 const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -19,11 +19,17 @@ const fs = require('fs');
 // 常量定义
 // ---------------------------------------------------------------------
 
-// 用户数据存放目录（相对于主进程文件所在目录，即项目目录下的 data/）
-const DATA_DIR = path.join(__dirname, 'data');
+// 用户数据存放目录：
+//  - 开发模式：项目目录下 data/
+//  - 打包后：程序所在目录下 data/（绿色便携，数据跟程序走）
+//    🔴 不能写入 resources/app.asar 内部 —— asar 归档只读，写入会报 ENOENT；
+//    portable 版以 PORTABLE_EXECUTABLE_DIR（真实 exe 所在目录）为准
+const DATA_DIR = app.isPackaged
+  ? path.join(process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(app.getPath('exe')), 'data')
+  : path.join(__dirname, 'data');
 
 // 允许读写的数据文件白名单（防止渲染进程通过文件名参数访问任意文件）
-const ALLOWED_FILES = ['apps.json', 'events.json', 'skills.json', 'settings.json', 'sign-tasks.json'];
+const ALLOWED_FILES = ['apps.json', 'events.json', 'skills.json', 'settings.json', 'sign-tasks.json', 'bg-run.json'];
 
 // 每个数据文件对应的默认值（文件不存在或损坏时使用）
 const DEFAULT_VALUES = {
@@ -31,7 +37,9 @@ const DEFAULT_VALUES = {
   'events.json': [],
   'skills.json': [],
   'settings.json': { theme: 'light' },
-  'sign-tasks.json': []
+  'sign-tasks.json': [],
+  // 「关闭后继续后台运行」独立文件（主进程持有，避免与渲染进程的 settings.json 互相覆盖）
+  'bg-run.json': { enabled: false }
 };
 
 // ---------------------------------------------------------------------
@@ -186,6 +194,29 @@ function ensureDataDir() {
 }
 
 /**
+ * 打包版首次运行的数据初始化：
+ * 把打包时经 extraResources 带入的 resources/data 复制到程序目录 data/，
+ * 实现「开箱即用」（exe 旁 data 已有同名文件则以用户数据优先，不覆盖）
+ */
+function initDataDir() {
+  ensureDataDir();
+  if (!app.isPackaged) return;
+  const bundledDir = path.join(process.resourcesPath, 'data');
+  if (!fs.existsSync(bundledDir)) return;
+  ALLOWED_FILES.forEach((name) => {
+    const target = path.join(DATA_DIR, name);
+    const source = path.join(bundledDir, name);
+    if (!fs.existsSync(target) && fs.existsSync(source)) {
+      try {
+        fs.copyFileSync(source, target);
+      } catch (e) {
+        console.error('初始化数据文件失败：', name, e);
+      }
+    }
+  });
+}
+
+/**
  * 根据文件名返回完整的数据文件路径，并做白名单校验
  * @param {string} filename 数据文件名（例如 apps.json）
  * @returns {string} 文件的绝对路径
@@ -240,6 +271,57 @@ function writeData(filename, data) {
 // 窗口创建
 // ---------------------------------------------------------------------
 
+// 主窗口引用（托盘恢复窗口使用）
+let mainWindow = null;
+// 「关闭后继续后台运行」状态（与 data/bg-run.json 同步，close 拦截据此判断）
+let backgroundRun = false;
+// 是否正在真正退出（before-quit 置 true，放行 close 事件）
+let quitting = false;
+// 系统托盘实例
+let tray = null;
+// 本次运行期间是否已提示过「最小化到托盘」（避免每次关闭都打扰）
+let bgNoticeShown = false;
+
+/**
+ * 显示并聚焦主窗口（托盘点击 / 菜单恢复使用）
+ */
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+/**
+ * 创建系统托盘
+ * 说明：「关闭后继续后台运行」时窗口被隐藏，托盘是用户找回窗口 / 退出的入口。
+ *       图标取应用 exe 关联图标（打包后即应用图标，开发模式为 Electron 图标）。
+ */
+function createTray() {
+  app.getFileIcon(process.execPath, { size: 'small' })
+    .catch(() => null)
+    .then((img) => {
+      tray = new Tray(img && !img.isEmpty() ? img : nativeImage.createEmpty());
+      tray.setToolTip('jiao公台');
+      tray.setContextMenu(Menu.buildFromTemplate([
+        { label: '显示主面板', click: showMainWindow },
+        { type: 'separator' },
+        {
+          label: '退出',
+          click: () => {
+            quitting = true;   // 放行 close 拦截，真正退出
+            app.quit();
+          }
+        }
+      ]));
+      // Windows 左键单击托盘图标：恢复主面板
+      tray.on('click', showMainWindow);
+    });
+}
+
 /**
  * 创建主窗口，并设置安全参数：
  *   contextIsolation: true —— 开启上下文隔离，渲染进程无法直接访问 Node
@@ -254,13 +336,27 @@ function createWindow() {
     minHeight: 600,
     title: 'jiao公台',
     backgroundColor: '#f0f2f5',
-    webPreferences: {
+      webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false
     }
   });
 
+  // 🔴 「关闭后继续后台运行」：开启时拦截窗口关闭 → 隐藏到托盘
+  win.on('close', (e) => {
+    if (backgroundRun && !quitting) {
+      e.preventDefault();
+      win.hide();
+      // 首次隐藏时通过渲染进程 Toast 提示（避免用户误以为应用闪退）
+      if (!bgNoticeShown && win.webContents && !win.webContents.isDestroyed()) {
+        bgNoticeShown = true;
+        win.webContents.send('bg-notice', '已最小化到系统托盘，可从托盘恢复或退出');
+      }
+    }
+  });
+
+  mainWindow = win;
   win.loadFile('index.html');
 }
 
@@ -572,6 +668,63 @@ ipcMain.handle('data:write', async (event, filename, data) => {
     return { success: true };
   } catch (err) {
     return { success: false, message: `保存失败：${err.message}` };
+  }
+});
+
+// ---------------------------------------------------------------------
+// 设置 —— 开机自启动
+// 说明：通过系统注册表（Windows 的 Run 键 / macOS 的 LoginItem）实现，
+//       状态由操作系统保存，无需写入 data/settings.json
+// ---------------------------------------------------------------------
+
+/**
+ * 读取开机自启动状态
+ * @returns {Promise<boolean>} true 表示已开启
+ */
+ipcMain.handle('settings:get-autostart', async () => {
+  return app.getLoginItemSettings().openAtLogin;
+});
+
+/**
+ * 设置开机自启动
+ * 说明：portable 版运行时 process.execPath 指向临时解压目录，
+ *       electron-builder 的 portable 会注入 PORTABLE_EXECUTABLE_FILE
+ *       指向真实 exe 路径，优先使用它注册自启动。
+ * @param {boolean} enabled true 开启 / false 关闭
+ * @returns {Promise<boolean>} 设置后的实际状态
+ */
+ipcMain.handle('settings:set-autostart', async (event, enabled) => {
+  const exePath = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+  app.setLoginItemSettings({
+    openAtLogin: !!enabled,
+    path: exePath,
+    args: []
+  });
+  return app.getLoginItemSettings().openAtLogin;
+});
+
+/**
+ * 读取「关闭后继续后台运行」状态
+ * @returns {Promise<boolean>} true 表示已开启
+ */
+ipcMain.handle('settings:get-background', async () => {
+  return backgroundRun;
+});
+
+/**
+ * 设置「关闭后继续后台运行」
+ * 说明：持久化到 data/bg-run.json 独立文件（主进程持有），
+ *       避免与渲染进程 Store 保存的 settings.json 相互覆盖字段。
+ * @param {boolean} enabled true 开启 / false 关闭
+ * @returns {Promise<{success: boolean, value?: boolean, message?: string}>}
+ */
+ipcMain.handle('settings:set-background', async (event, enabled) => {
+  backgroundRun = !!enabled;
+  try {
+    writeData('bg-run.json', { enabled: backgroundRun });
+    return { success: true, value: backgroundRun };
+  } catch (err) {
+    return { success: false, message: err.message, value: backgroundRun };
   }
 });
 
@@ -1650,9 +1803,13 @@ function buildChineseMenu() {
 }
 
 app.whenReady().then(() => {
-  ensureDataDir();
+  initDataDir();
+  // 读取「关闭后继续后台运行」持久化状态
+  const bgConf = readData('bg-run.json');
+  backgroundRun = !!(bgConf && bgConf.enabled);
   Menu.setApplicationMenu(buildChineseMenu());
   createWindow();
+  createTray();
 
   // macOS 上点击 Dock 图标且没有窗口时，重新创建窗口（其他平台不触发）
   app.on('activate', () => {
@@ -1660,6 +1817,11 @@ app.whenReady().then(() => {
       createWindow();
     }
   });
+});
+
+// 真正退出前放行 close 拦截（托盘退出 / 菜单退出 / 系统退出都会触发）
+app.on('before-quit', () => {
+  quitting = true;
 });
 
 // 所有窗口都关闭时退出应用（Windows / Linux 惯例；macOS 例外）

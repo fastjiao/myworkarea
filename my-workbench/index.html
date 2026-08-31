@@ -62,9 +62,12 @@
 
       </nav>
 
-      <!-- 侧边栏底部：主题切换 -->
+      <!-- 侧边栏底部：主题切换 + 设置入口（点击齿轮打开设置弹窗） -->
       <div class="sidebar-footer">
         <button id="theme-toggle" class="theme-toggle">暗色模式</button>
+        <button id="settings-btn" class="settings-btn" title="设置" aria-label="打开设置">
+          <span id="settings-icon"></span>
+        </button>
       </div>
     </aside>
 
@@ -141,6 +144,7 @@
   <script src="modules/skill-finder.js"></script>
   <script src="modules/sign.js"></script>
   <script src="modules/clock.js"></script>
+  <script src="modules/settings.js"></script>
   <script src="renderer.js"></script>
 </body>
 

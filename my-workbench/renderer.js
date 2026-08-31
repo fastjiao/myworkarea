@@ -510,6 +510,11 @@ async function init() {
     window.ClockWidget.init();
   }
 
+  // 9.2 初始化设置弹窗（侧边栏齿轮入口 + 开机自启动开关）
+  if (window.SettingsWidget && typeof window.SettingsWidget.init === 'function') {
+    window.SettingsWidget.init();
+  }
+
   // 10. 默认进入首页（仪表盘）
   switchPage('dashboard');
 

@@ -1,6 +1,6 @@
 {
   "name": "jiao-workbench",
-  "version": "2.0.0",
+  "version": "2.2.1",
   "description": "jiao公台桌面客户端：软件快捷启动、文件/文件夹打开、日历与待办、技能查找、AI技能发现",
   "main": "main.js",
   "scripts": {

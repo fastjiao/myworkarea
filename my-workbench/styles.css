@@ -246,13 +246,17 @@ body {
 }
 
 .sidebar-footer {
+  display: flex;          /* 主题按钮占满 + 右侧设置图标按钮 */
+  align-items: stretch;
+  gap: 8px;
   padding: 16px 12px 0;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   margin: 0 12px;
 }
 
 .theme-toggle {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 9px 14px;
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 8px;
@@ -265,6 +269,32 @@ body {
 
 .theme-toggle:hover {
   background: rgba(255, 255, 255, 0.08);
+}
+
+/* 设置入口：主题按钮右侧的齿轮图标按钮 */
+.settings-btn {
+  flex-shrink: 0;
+  width: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sidebar-text);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.settings-btn svg {
+  display: block;
+}
+
+.settings-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--sidebar-text-active);
+  border-color: rgba(169, 194, 255, 0.4);
 }
 
 /* ---------------------------------------------------------------------
@@ -2172,5 +2202,90 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .clock-colon {
     animation: none;
+  }
+}
+
+/* =====================================================================
+   设置弹窗（齿轮入口）：设置行 + iOS 风格开关
+   ===================================================================== */
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 2px;
+}
+
+.settings-row-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.settings-row-desc {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--text-sub);
+}
+
+/* iOS 风格拨动开关 */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.toggle-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--border);
+  transition: background 0.2s;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s;
+}
+
+/* 开启态：主色底 + LED 辉光，滑块右移 */
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--primary);
+  box-shadow: 0 0 8px rgba(95, 134, 255, 0.45);
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(20px);
+}
+
+/* 键盘聚焦可见 */
+.toggle-switch input:focus-visible + .toggle-slider {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* 系统开启「减少动态效果」：关闭开关过渡动画 */
+@media (prefers-reduced-motion: reduce) {
+  .toggle-slider,
+  .toggle-slider::before {
+    transition: none;
   }
 }

@@ -57,6 +57,40 @@ contextBridge.exposeInMainWorld('workbench', {
    */
   getWebFavicon: (url) => ipcRenderer.invoke('get-web-favicon', url),
 
+  // ======================== 设置 ========================
+
+  /**
+   * 读取开机自启动状态
+   * @returns {Promise<boolean>} true 表示已开启
+   */
+  getAutoStart: () => ipcRenderer.invoke('settings:get-autostart'),
+
+  /**
+   * 设置开机自启动
+   * @param {boolean} enabled true 开启 / false 关闭
+   * @returns {Promise<boolean>} 设置后的实际状态
+   */
+  setAutoStart: (enabled) => ipcRenderer.invoke('settings:set-autostart', enabled),
+
+  /**
+   * 读取「关闭后继续后台运行」状态
+   * @returns {Promise<boolean>} true 表示已开启
+   */
+  getBackgroundRun: () => ipcRenderer.invoke('settings:get-background'),
+
+  /**
+   * 设置「关闭后继续后台运行」
+   * @param {boolean} enabled true 开启 / false 关闭
+   * @returns {Promise<{success: boolean, value?: boolean, message?: string}>}
+   */
+  setBackgroundRun: (enabled) => ipcRenderer.invoke('settings:set-background', enabled),
+
+  /**
+   * 订阅主进程后台运行提示（如「已最小化到系统托盘」）
+   * @param {(message: string) => void} callback 收到提示时回调
+   */
+  onBackgroundNotice: (callback) => ipcRenderer.on('bg-notice', (event, message) => callback(message)),
+
   /**
    * 读取某个数据文件的内容
    * @param {string} filename 数据文件名（如 'apps.json'）
