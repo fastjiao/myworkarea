@@ -10,7 +10,7 @@
 // 说明：主进程只负责「系统层面」的操作，不参与任何界面渲染逻辑
 // =====================================================================
 
-const { app, BrowserWindow, ipcMain, dialog, shell, session, screen, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, session, screen, Menu, net } = require('electron');
 const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -468,6 +468,100 @@ ipcMain.handle('open-url', async (event, url) => {
     return { success: false, message: `打开失败：${err.message}` };
   }
 });
+
+/**
+ * 获取网页快捷方式的默认图标（网站 Favicon）
+ * 说明：渲染进程的 CSP 限制 img-src 只能加载本地 / data:，因此由主进程
+ *       通过 net 模块下载 favicon 并转成 data URL 返回，规避跨域与 CSP 问题。
+ * @param {string} url 用户填写的网址
+ * @returns {Promise<string>} favicon 的 data URL；失败返回空字符串
+ */
+ipcMain.handle('get-web-favicon', async (event, url) => {
+  if (!url || typeof url !== 'string' || url.trim() === '') {
+    return '';
+  }
+  return fetchFaviconDataUrl(url.trim());
+});
+
+/**
+ * 下载网站 Favicon 并转为 data URL
+ * 策略：请求站点根目录 /favicon.ico；如需更高命中率，可追加 Google favicon
+ *       服务作为候选（国内环境可能不可达，默认关闭）。
+ * @param {string} rawUrl 用户填写的网址
+ * @returns {Promise<string>} favicon 的 data URL；失败返回空字符串
+ */
+function fetchFaviconDataUrl(rawUrl) {
+  return new Promise((resolve) => {
+    // 归一化 URL 提取主机名
+    let host;
+    try {
+      const input = /^https?:\/\//i.test(rawUrl) ? rawUrl : 'https://' + rawUrl;
+      host = new URL(input).hostname;
+    } catch (e) {
+      return resolve('');
+    }
+
+    const candidates = [
+      `https://${host}/favicon.ico`
+      // 备用候选（按需取消注释启用）：
+      // `https://www.google.com/s2/favicons?domain=${host}&sz=64`
+    ];
+
+    let idx = 0;
+    const tryNext = () => {
+      if (idx >= candidates.length) return resolve('');
+      request(candidates[idx++]);
+    };
+
+    const request = (targetUrl) => {
+      let req;
+      try {
+        // redirect: 'follow' 自动跟随 301/302 重定向（如 favicon.ico → .png）
+        req = net.request({ url: targetUrl, redirect: 'follow' });
+      } catch (e) {
+        return tryNext();
+      }
+
+      // 8 秒超时兜底，避免网络无响应时 Promise 永久挂起
+      const timer = setTimeout(() => {
+        try { req.abort(); } catch (e) { /* 忽略 */ }
+      }, 8000);
+
+      req.on('response', (res) => {
+        const contentType = (res.headers['content-type'] || '').toLowerCase();
+
+        // 非 200 或明确为 HTML（如 404 错误页）时，尝试下一个候选
+        if (res.statusCode !== 200 || (contentType && contentType.includes('text/html'))) {
+          res.on('data', () => {});
+          res.on('end', () => { clearTimeout(timer); tryNext(); });
+          return;
+        }
+
+        const chunks = [];
+        let size = 0;
+        res.on('data', (chunk) => {
+          size += chunk.length;
+          if (size > 1024 * 1024) {
+            req.abort();            // 超过 1MB 视为异常
+          } else {
+            chunks.push(chunk);
+          }
+        });
+        res.on('end', () => {
+          clearTimeout(timer);
+          if (size === 0 || size > 1024 * 1024) return tryNext();
+          const buf = Buffer.concat(chunks);
+          const mime = (contentType && contentType.split(';')[0].trim()) || 'image/x-icon';
+          resolve(`data:${mime};base64,${buf.toString('base64')}`);
+        });
+      });
+      req.on('error', () => { clearTimeout(timer); tryNext(); });
+      req.end();
+    };
+
+    tryNext();
+  });
+}
 
 /**
  * 写入某个数据文件

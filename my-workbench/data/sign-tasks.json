@@ -9,22 +9,7 @@
     "psScript": "# user32.dll 点击坐标 (x, y)\nAdd-Type @\"\nusing System;\nusing System.Runtime.InteropServices;\npublic class Mouse {\n  [DllImport(\"user32.dll\")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);\n  [DllImport(\"user32.dll\")] public static extern bool SetCursorPos(int X, int Y);\n}\n\"@\n[System.Reflection.Assembly]::LoadWithPartialName(\"System.Windows.Forms\") > $null\n# 把下面的坐标改成你按钮的屏幕坐标（用屏幕尺子或类似工具测量）\n$x = 465; $y = 361\n[Mouse]::SetCursorPos($x, $y)\nStart-Sleep -Milliseconds 200\n[Mouse]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)  # 按下\n[Mouse]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)  # 抬起\nWrite-Host \"已点击 ($x, $y)\"",
     "verifyScript": "",
     "closeAfterSign": true,
-    "lastSignDate": "2026-08-30",
+    "lastSignDate": "2026-08-31",
     "nextSignDate": null
-  },
-  {
-    "id": "sign-1788058747816",
-    "name": "workbuddy",
-    "taskType": "desktop",
-    "exePath": "D:\\Users\\15366\\AppData\\Local\\Programs\\WorkBuddy\\WorkBuddy.exe",
-    "exeArgs": [],
-    "launchDelay": 10000,
-    "psScript": "# === 高 DPI 适配：防止 125%/150% 缩放屏坐标偏移 ===\nAdd-Type @\"\nusing System;\nusing System.Runtime.InteropServices;\npublic class Mouse {\n  [DllImport(\"user32.dll\")] public static extern bool SetProcessDPIAware();\n  [DllImport(\"user32.dll\")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);\n  [DllImport(\"user32.dll\")] public static extern bool SetCursorPos(int X, int Y);\n}\n\"@\n[Mouse]::SetProcessDPIAware() | Out-Null\n\n# === 可选：先激活目标程序窗口（把引号里改成窗口标题）===\n# $wshell = New-Object -ComObject WScript.Shell\n# $wshell.AppActivate(\"窗口标题\")\n# Start-Sleep -Milliseconds 500\n\n# === 坐标：用表单里的「拾取屏幕坐标」按钮自动抓取（物理像素，已按缩放转换）===\n$x = 576; $y = 1346\n[Mouse]::SetCursorPos($x, $y)\nStart-Sleep -Milliseconds 200\n[Mouse]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)  # 左键按下\n[Mouse]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)  # 左键抬起\nWrite-Host \"已点击 ($x, $y)\"",
-    "verifyScript": "",
-    "closeAfterSign": true,
-    "lastSignDate": "2026-08-30",
-    "nextSignDate": null,
-    "waitMode": "auto",
-    "waitWindowTitle": ""
   }
 ]

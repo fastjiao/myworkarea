@@ -124,11 +124,9 @@ window.Home = {
     card.addEventListener('dragstart', (e) => this._onDragStart(e, item));
     card.addEventListener('dragend', () => this._clearDrag());
 
-    // 文件 / 网页 类型标签（文件夹用图标即可区分，不显示文字标签）
-    if (item.type === 'file' || item.type === 'web') {
-      const label = item.type === 'file' ? '文件' : '网页';
-      const cls = item.type === 'web' ? 'web' : item.type;
-      card.appendChild(UI.el('span', 'shortcut-tag ' + cls, label));
+    // 文件类型标签（文件夹 / 网页用图标即可区分，不显示文字标签）
+    if (item.type === 'file') {
+      card.appendChild(UI.el('span', 'shortcut-tag ' + item.type, '文件'));
     }
 
     // 删除角标（仅自定义项显示）
@@ -196,8 +194,11 @@ window.Home = {
     } else if (item.type === 'app') {
       // 自动：软件类读 .exe 图标，失败用首字母图标兜底
       this._loadExeIcon(el, item);
+    } else if (item.type === 'web') {
+      // 自动：网页快捷方式默认加载网站 Favicon，失败保留默认外链图标
+      this._loadWebFavicon(el, item);
     } else {
-      // 自动：文件 / 文件夹 / 网页给默认 SVG 图标
+      // 自动：文件 / 文件夹给默认 SVG 图标
       el.innerHTML = window.svgIcon(this._defaultIconName(item), 22);
     }
     return el;
@@ -247,6 +248,46 @@ window.Home = {
     }
     return window.workbench.getFileIcon(filePath).then((dataUrl) => {
       if (dataUrl) this._iconCache.set(filePath, dataUrl);
+      return dataUrl;
+    });
+  },
+
+  /**
+   * 异步加载网页快捷方式的网站 Favicon
+   * 说明：先用默认外链 SVG 图标占位，下载成功后再替换为真实图标；
+   *       下载失败（无 favicon / 网络异常）保留占位图标，保证 UI 不空白。
+   * @param {HTMLElement} el 图标容器
+   * @param {object} item 快捷方式数据
+   */
+  async _loadWebFavicon(el, item) {
+    el.innerHTML = window.svgIcon('external', 22);       // 占位图标
+    try {
+      const dataUrl = await this._getWebFaviconCached(item.path);
+      if (!dataUrl) return;                              // 失败：保留占位图标
+      el.innerHTML = '';
+      const img = document.createElement('img');
+      img.className = 'shortcut-icon-img';
+      img.src = dataUrl;
+      img.alt = item.name;
+      img.draggable = false;
+      el.appendChild(img);
+    } catch (e) {
+      // 失败：保留占位图标
+    }
+  },
+
+  /**
+   * 读取网页 favicon（带内存缓存，避免重复 IPC 请求与图标闪烁）
+   * @param {string} url 目标网址
+   * @returns {Promise<string>} favicon 的 data URL，失败返回空字符串
+   */
+  _getWebFaviconCached(url) {
+    if (!this._faviconCache) this._faviconCache = new Map();
+    if (this._faviconCache.has(url)) {
+      return Promise.resolve(this._faviconCache.get(url));
+    }
+    return window.workbench.getWebFavicon(url).then((dataUrl) => {
+      if (dataUrl) this._faviconCache.set(url, dataUrl);
       return dataUrl;
     });
   },

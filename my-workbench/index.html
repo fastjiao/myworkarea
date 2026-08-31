@@ -82,6 +82,31 @@
     </div>
   </div>
 
+  <!-- ===================== 右上角时钟组件 =====================
+       模式 A（默认）：圆形模拟时钟；模式 B：数字时钟 HH:MM:SS
+       点击 / 回车切换，指针旋转由 CSS transform: rotate() 驱动
+       🔴 -webkit-app-region: no-drag 保证时钟在自己区域内可点击，
+          不影响标题栏其余部分的拖拽（若未来启用无边框拖拽布局）
+  -->
+  <div id="clock-widget" class="clock-widget" data-mode="analog"
+       role="button" tabindex="0" aria-label="时钟，点击切换显示模式，拖动可移动位置"
+       title="点击切换时钟样式，拖动可移动位置">
+    <!-- 模式 A：模拟表盘（刻度与 12/3/6/9 数字由 clock.js 动态生成） -->
+    <div class="clock-analog clock-view" aria-hidden="true">
+      <div class="clock-hand hand-hour"></div>
+      <div class="clock-hand hand-minute"></div>
+      <div class="clock-hand hand-second"></div>
+      <div class="clock-center"></div>
+    </div>
+    <!-- 模式 B：数字时钟（如不需要下方日期行，删除 clock-digital-date 一行即可） -->
+    <div class="clock-digital clock-view" aria-hidden="true">
+      <div class="clock-digital-time">
+        <span id="clock-dh">00</span><span class="clock-colon">:</span><span id="clock-dm">00</span><span class="clock-colon">:</span><span id="clock-ds">00</span>
+      </div>
+      <div class="clock-digital-date" id="clock-date"></div>
+    </div>
+  </div>
+
   <!-- 通用模态框：内容由 JS 动态填充，供添加/编辑表单复用 -->
   <div id="modal-overlay" class="modal-overlay" hidden>
     <div class="modal" role="dialog" aria-labelledby="modal-title">
@@ -115,6 +140,7 @@
   <script src="modules/skills.js"></script>
   <script src="modules/skill-finder.js"></script>
   <script src="modules/sign.js"></script>
+  <script src="modules/clock.js"></script>
   <script src="renderer.js"></script>
 </body>
 

@@ -1938,3 +1938,239 @@ body {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* =====================================================================
+   右上角时钟组件（模式 A 模拟 / 模式 B 数字，点击切换）
+   说明：fixed 固定于右上角；配色复用全局 CSS 变量，自动适配亮/暗主题。
+        🔴 无论父级是否声明 -webkit-app-region: drag，组件自身声明 no-drag，
+           保证时钟区域始终可点击，不影响标题栏其余区域的窗口拖拽。
+   ===================================================================== */
+.clock-widget {
+  position: fixed;
+  top: 14px;
+  right: 16px;
+  z-index: 50; /* 低于右键菜单(100)/模态框(200)/Toast(300)，高于背景层 */
+  -webkit-app-region: no-drag; /* Electron 拖拽区适配：保证可点击 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 114px;
+  min-width: 114px;
+  padding: 9px;
+  border-radius: 999px; /* 胶囊形：模拟模式正圆，数字模式横向拉长 */
+  background: var(--glass-strong);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  user-select: none;
+  overflow: hidden;
+  transition: min-width 0.35s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s, border-color 0.25s;
+}
+
+/* 悬停：界面蓝外发光（LED 灯带效果，与项目内交互组件一致） */
+.clock-widget:hover {
+  border-color: rgba(95, 134, 255, 0.55);
+  box-shadow: var(--led-glow);
+}
+
+/* 拖动中：抓取光标 + 持续发光 */
+.clock-widget.dragging {
+  cursor: grabbing;
+  border-color: rgba(95, 134, 255, 0.55);
+  box-shadow: var(--led-glow);
+}
+
+/* 键盘聚焦（Tab 可达） */
+.clock-widget:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* 数字模式：容器横向加宽 */
+.clock-widget[data-mode="digital"] {
+  min-width: 264px;
+  padding-left: 33px;
+  padding-right: 33px;
+}
+
+/* ---- 两种视图：绝对定位填充容器，交叉淡入 / 弹性缩放切换 ---- */
+.clock-view {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: scale(0.55);
+  transition: opacity 0.28s ease, transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none; /* 隐藏视图不拦截点击 */
+}
+
+.clock-widget[data-mode="analog"] .clock-analog,
+.clock-widget[data-mode="digital"] .clock-digital {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* ===================== 模式 A：圆形模拟时钟 ===================== */
+.clock-analog {
+  position: relative;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  /* 表盘：玻璃内凹质感（左上高光 + 蓝灰渐变底） */
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.45), transparent 55%),
+    linear-gradient(145deg, rgba(95, 134, 255, 0.12), rgba(47, 62, 102, 0.10));
+  box-shadow:
+    inset 0 0 0 1px rgba(95, 134, 255, 0.22),
+    inset 0 2px 6px rgba(47, 62, 102, 0.16);
+}
+
+/* 刻度：占满表盘的容器 + 顶部短线，绕表盘中心旋转 */
+.clock-tick {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 50%;
+}
+.clock-tick::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 4.5px;
+  width: 2.25px;
+  height: 7.5px;
+  margin-left: -1.125px;
+  border-radius: 99px;
+  background: var(--text-muted);
+}
+/* 12/3/6/9 主刻度：加粗 + 主色发光 */
+.clock-tick.major::before {
+  width: 3px;
+  height: 10.5px;
+  margin-left: -1.5px;
+  background: var(--primary);
+  box-shadow: 0 0 6px rgba(95, 134, 255, 0.6);
+}
+
+/* 整点数字：随容器旋转后内部反向回正 */
+.clock-num {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 50%;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-sub);
+}
+.clock-num span {
+  position: absolute;
+  left: 50%;
+  top: 16.5px;
+  white-space: nowrap;
+}
+
+/* 指针：定位在表盘中心（left 50% + bottom 50%），旋转轴在指针底端 */
+.clock-hand {
+  position: absolute;
+  left: 50%;
+  bottom: 50%;
+  border-radius: 99px;
+  transform-origin: 50% 100%; /* 🔴 旋转围绕指针底部（表盘中心） */
+  will-change: transform;
+}
+/* 时针：最短最粗 */
+.hand-hour {
+  width: 6px;
+  height: 22.5px;
+  margin-left: -3px;
+  background: var(--text);
+}
+/* 分针：中等 */
+.hand-minute {
+  width: 3.75px;
+  height: 33px;
+  margin-left: -1.875px;
+  background: var(--text);
+}
+/* 秒针：主色 + 发光 + 尾部反向延伸 */
+.hand-second {
+  width: 2.25px;
+  height: 37.5px;
+  margin-left: -1.125px;
+  background: var(--primary);
+  box-shadow: 0 0 9px rgba(95, 134, 255, 0.65);
+}
+.hand-second::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 2.25px;
+  height: 12px;
+  border-radius: 99px;
+  background: inherit;
+  opacity: 0.85;
+}
+
+/* 中心轴：盖住三针交汇点 */
+.clock-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10.5px;
+  height: 10.5px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 0 1.5px var(--glass-strong), 0 0 12px rgba(95, 134, 255, 0.8);
+}
+
+/* ===================== 模式 B：数字时钟 ===================== */
+.clock-digital-time {
+  display: flex;
+  align-items: center;
+  line-height: 1.1;
+  font-size: 31.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums; /* 等宽数字，避免跳动 */
+  letter-spacing: 0.5px;
+  color: var(--text);
+  white-space: nowrap;
+}
+/* 暗色下数字带轻微 LED 辉光 */
+[data-theme="dark"] .clock-digital-time {
+  text-shadow: 0 0 12px rgba(95, 134, 255, 0.5);
+}
+/* 数字段继承字号字重 */
+.clock-digital-time > span {
+  font: inherit;
+}
+/* 冒号呼吸闪烁 */
+.clock-colon {
+  margin: 0 3px;
+  color: var(--primary);
+  animation: clock-breath 1s ease-in-out infinite;
+}
+@keyframes clock-breath {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* 日期行：次要信息，跨天时更新 */
+.clock-digital-date {
+  margin-top: 4.5px;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-sub);
+  white-space: nowrap;
+}
+
+/* 系统开启「减少动态效果」：关闭冒号呼吸动画 */
+@media (prefers-reduced-motion: reduce) {
+  .clock-colon {
+    animation: none;
+  }
+}

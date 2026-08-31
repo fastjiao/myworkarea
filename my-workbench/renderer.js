@@ -505,6 +505,11 @@ async function init() {
     if (mod && typeof mod.init === 'function') mod.init();
   });
 
+  // 9.1 初始化右上角时钟组件（全局悬浮，不属于页面级模块）
+  if (window.ClockWidget && typeof window.ClockWidget.init === 'function') {
+    window.ClockWidget.init();
+  }
+
   // 10. 默认进入首页（仪表盘）
   switchPage('dashboard');
 

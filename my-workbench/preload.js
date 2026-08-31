@@ -51,6 +51,13 @@ contextBridge.exposeInMainWorld('workbench', {
   getFileIcon: (filePath) => ipcRenderer.invoke('get-file-icon', filePath),
 
   /**
+   * 获取网页快捷方式的默认图标（网站 Favicon）
+   * @param {string} url 目标网址
+   * @returns {Promise<string>} favicon 的 data URL，失败时为空字符串
+   */
+  getWebFavicon: (url) => ipcRenderer.invoke('get-web-favicon', url),
+
+  /**
    * 读取某个数据文件的内容
    * @param {string} filename 数据文件名（如 'apps.json'）
    * @returns {Promise<*>} 文件解析后的数据
