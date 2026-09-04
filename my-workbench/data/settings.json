@@ -1,6 +1,0 @@
-{
-  "theme": "light",
-  "skillFinderApiKey": "sk-ws-H.EPYIMLL.cGnI.MEUCIQD1EJcTcfbdmvWiUC_ay2dK1SCBLDlnHA_A4cSsBudGRwIgfYGYShZ1kZWcpT8pnpKmvN5xdyUplAjdlEjZsUACrlE",
-  "skillFinderApiEndpoint": "https://ws-rsh5mwolzhttrdbb.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-  "skillFinderModel": "qwen-math-turbo"
-}
