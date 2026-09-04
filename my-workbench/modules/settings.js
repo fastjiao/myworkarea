@@ -37,7 +37,7 @@ window.SettingsWidget = {
     const autoRow = UI.el('div', 'settings-row');
     const autoText = UI.el('div', 'settings-row-text');
     autoText.appendChild(UI.el('div', 'settings-row-title', '开机自启动'));
-    autoText.appendChild(UI.el('div', 'settings-row-desc', '登录 Windows 后自动启动 jiao公台'));
+    autoText.appendChild(UI.el('div', 'settings-row-desc', '登录 Windows 后自动启动 教公台-阡稻工作室'));
 
     const autoSwitch = UI.el('label', 'toggle-switch');
     autoSwitch.title = '开机自启动';

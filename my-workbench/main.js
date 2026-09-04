@@ -305,7 +305,7 @@ function createTray() {
     .catch(() => null)
     .then((img) => {
       tray = new Tray(img && !img.isEmpty() ? img : nativeImage.createEmpty());
-      tray.setToolTip('jiao公台');
+      tray.setToolTip('教公台-阡稻工作室');
       tray.setContextMenu(Menu.buildFromTemplate([
         { label: '显示主面板', click: showMainWindow },
         { type: 'separator' },
@@ -334,7 +334,7 @@ function createWindow() {
     height: 760,
     minWidth: 860,
     minHeight: 600,
-    title: 'jiao公台',
+    title: '教公台-阡稻工作室',
     backgroundColor: '#f0f2f5',
       webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -1791,7 +1791,7 @@ function buildChineseMenu() {
             dialog.showMessageBox({
               type: 'info',
               title: '关于',
-              message: 'jiao公台',
+              message: '教公台-阡稻工作室',
               detail: '个人工作台桌面应用 v2.0.0'
             });
           }

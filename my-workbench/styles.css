@@ -1,5 +1,5 @@
 /* =====================================================================
-   styles.css —— jiao公台全局样式
+   styles.css —— 教公台-阡稻工作室全局样式
    职责：定义整体布局（侧边栏 + 内容区）、各功能模块样式、
          亮色/暗色主题、Toast、紧凑快捷栏、日历（日/周/月）、技能库等
    说明：通过 CSS 变量集中管理配色，[data-theme="dark"] 覆盖变量实现主题切换
@@ -1005,6 +1005,10 @@ body {
 .skill-name {
   font-size: 15px;
   font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .skill-level {
@@ -1013,6 +1017,8 @@ body {
   border-radius: 999px;
   background: var(--hover-bg);
   color: var(--text-sub);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .skill-category {
@@ -1115,6 +1121,8 @@ body {
   border-radius: 10px;
   font-weight: 500;
   margin-left: 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .sign-type-web {
