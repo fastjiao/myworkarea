@@ -595,13 +595,34 @@ ipcMain.handle('netease:fetch', async (event, { apiPath, query, cookie }) => {
 let neteaseApiProc = null;
 
 /**
+ * 探测本地 API 端口是否已有服务在响应（复用已有实例，避免重复 fork）
+ * @param {number} port 端口号
+ * @returns {Promise<boolean>} true 表示服务存活
+ */
+function checkApiAlive(port) {
+  return new Promise((resolve) => {
+    const req = http.request({ hostname: '127.0.0.1', port, path: '/', method: 'GET', timeout: 1500 }, (res) => {
+      res.resume();
+      resolve(true);
+    });
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+    req.end();
+  });
+}
+
+/**
  * 自动启动 NeteaseCloudMusicApi 子进程（fork netease-api-host.js）
  * @returns {Promise<{running?: boolean, port?: number, failed?: boolean, reason?: string}>}
  */
 ipcMain.handle('netease:start-api', async () => {
   // 已在运行：直接返回
   if (neteaseApiProc && !neteaseApiProc.killed) {
-    return { running: true, port: 3000 };
+    return { running: true, port: NETEASE_API_PORT };
+  }
+  // 端口探测：若 3000 已有服务在响应（外部启动 / 上次残留），直接复用
+  if (await checkApiAlive(NETEASE_API_PORT)) {
+    return { running: true, port: NETEASE_API_PORT };
   }
   return new Promise((resolve) => {
     const hostPath = path.join(__dirname, 'netease-api-host.js');
@@ -616,7 +637,7 @@ ipcMain.handle('netease:start-api', async () => {
     neteaseApiProc = proc;
     // 子进程回报启动结果
     proc.on('message', (msg) => {
-      if (msg && msg.ok) done({ running: true, port: msg.port || 3000 });
+      if (msg && msg.ok) done({ running: true, port: msg.port || NETEASE_API_PORT });
       else done({ failed: true, reason: (msg && msg.error) || 'API 服务启动失败' });
     });
     // 子进程退出：若尚未 settled 且非 0，视为失败（多为包未安装）
@@ -1910,6 +1931,18 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(buildChineseMenu());
   createWindow();
   createTray();
+
+  // 预热网易云 API：窗口创建后立即后台启动，用户切到网易云页面时已就绪
+  checkApiAlive(NETEASE_API_PORT).then((alive) => {
+    if (!alive && (!neteaseApiProc || neteaseApiProc.killed)) {
+      const hostPath = path.join(__dirname, 'netease-api-host.js');
+      try {
+        const proc = fork(hostPath, [], { silent: true });
+        neteaseApiProc = proc;
+        proc.on('exit', () => { if (neteaseApiProc === proc) neteaseApiProc = null; });
+      } catch (e) { /* 预热失败静默，用户切到网易云页面时会重试 */ }
+    }
+  });
 
   // macOS 上点击 Dock 图标且没有窗口时，重新创建窗口（其他平台不触发）
   app.on('activate', () => {

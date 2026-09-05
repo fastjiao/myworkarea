@@ -305,6 +305,12 @@ function switchPage(pageName) {
   const neteaseBar = document.getElementById('netease-player-bar');
   if (neteaseBar) neteaseBar.style.display = (pageName === 'netease') ? '' : 'none';
   document.body.classList.toggle('netease-bar-active', pageName === 'netease' && neteaseBar && neteaseBar.classList.contains('show'));
+  // 歌词面板只在「音乐」页面显示，切换其他页面时自动关闭
+  if (pageName !== 'netease' && window.Netease && window.Netease._lyricVisible) {
+    window.Netease._lyricVisible = false;
+    const lyricPanel = document.getElementById('netease-lyric-panel');
+    if (lyricPanel) lyricPanel.classList.remove('show');
+  }
   const mod = PAGE_MODULES[pageName];
   if (mod && typeof mod.render === 'function') {
     mod.render();

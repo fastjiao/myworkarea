@@ -43,10 +43,24 @@ window.Netease = {
   _lyricEl: null,       // 歌词面板 DOM
   _lyricVisible: false, // 歌词面板是否可见
   _lyricCurrentIndex: -1, // 当前高亮歌词行索引
+  _keyBound: false,       // 键盘监听是否已绑定
 
   // -------------------------------------------------------------------
   init() {
     Store.onChange(() => this.render());
+    // 空格键播放/暂停（只在音乐页面生效，排除输入框）
+    if (!this._keyBound) {
+      this._keyBound = true;
+      document.addEventListener('keydown', (e) => {
+        if (e.code !== 'Space') return;
+        const activePage = document.querySelector('.page.active');
+        if (!activePage || activePage.id !== 'page-netease') return;
+        const tag = (e.target && e.target.tagName) || '';
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+        e.preventDefault();
+        this._togglePlay();
+      });
+    }
   },
 
   // -------------------------------------------------------------------
@@ -89,15 +103,22 @@ window.Netease = {
       }
       userWrap.appendChild(avWrap);
       userWrap.appendChild(UI.el('span', 'netease-mini-name', profile.nickname || '已登录用户'));
-      // 悬浮弹窗：仅含退出登录按钮
+      // 悬浮弹窗：仅含退出登录按钮，悬停 2 秒后自动关闭
       const popup = UI.el('div', 'netease-user-popup');
       const logoutBtn = UI.el('button', 'btn btn-sm netease-btn-danger netease-btn-text', '退出登录');
       logoutBtn.addEventListener('click', () => this._logout());
       popup.appendChild(logoutBtn);
       userWrap.appendChild(popup);
-      // mouseenter/mouseleave 显示悬浮弹窗
-      userWrap.addEventListener('mouseenter', () => popup.classList.add('show'));
-      userWrap.addEventListener('mouseleave', () => popup.classList.remove('show'));
+      let popupTimer = null;
+      userWrap.addEventListener('mouseenter', () => {
+        popup.classList.add('show');
+        clearTimeout(popupTimer);
+        popupTimer = setTimeout(() => popup.classList.remove('show'), 2000);
+      });
+      userWrap.addEventListener('mouseleave', () => {
+        clearTimeout(popupTimer);
+        popup.classList.remove('show');
+      });
       left.appendChild(userWrap);
     } else {
       left.appendChild(UI.el('span', 'netease-mini-name', '未登录'));
@@ -208,11 +229,32 @@ window.Netease = {
       return wrap;
     }
     const list = UI.el('div', 'netease-track-list netease-track-list-page');
+    // 表头
+    const header = UI.el('div', 'netease-track-header');
+    header.appendChild(UI.el('span', 'netease-th-idx', '#'));
+    header.appendChild(UI.el('span', 'netease-th-title', '标题'));
+    header.appendChild(UI.el('span', 'netease-th-album', '专辑'));
+    header.appendChild(UI.el('span', 'netease-th-time', '时长'));
+    list.appendChild(header);
+    // 歌曲行
     this._playlist.forEach((t, i) => {
-      const item = UI.el('div', 'netease-track' + (i === this._currentIndex ? ' active' : ''));
-      item.appendChild(UI.el('span', 'netease-track-idx', String(i + 1)));
-      item.appendChild(UI.el('span', 'netease-track-name', t.name));
-      item.appendChild(UI.el('span', 'netease-track-artist', t.artist));
+      const isActive = i === this._currentIndex;
+      const item = UI.el('div', 'netease-track' + (isActive ? ' active' : ''));
+      // 序号 / 播放图标
+      const idxCell = UI.el('span', 'netease-track-idx', String(i + 1));
+      const idxPlay = UI.el('span', 'netease-track-idx-play');
+      idxPlay.innerHTML = isActive && this._isPlaying ? window.svgIcon('pause-track', 14) : window.svgIcon('play-track', 14);
+      idxCell.appendChild(idxPlay);
+      item.appendChild(idxCell);
+      // 标题区：歌名 + 歌手（双行）
+      const titleCell = UI.el('div', 'netease-track-title-cell');
+      titleCell.appendChild(UI.el('span', 'netease-track-name', t.name));
+      if (t.artist) titleCell.appendChild(UI.el('span', 'netease-track-artist', t.artist));
+      item.appendChild(titleCell);
+      // 专辑
+      item.appendChild(UI.el('span', 'netease-track-album', t.album || ''));
+      // 时长
+      item.appendChild(UI.el('span', 'netease-track-time', this._formatTime(t.duration / 1000)));
       item.addEventListener('click', () => this._playIndex(i));
       list.appendChild(item);
     });
@@ -268,6 +310,19 @@ window.Netease = {
       const saved = await window.workbench.readData('netease-cookie.json');
       if (!saved || !saved.cookie) return false;
       this._cookie = saved.cookie;
+      // 优先恢复本地持久化的用户数据（秒开，无需等 API）
+      const local = await this._loadLocalData();
+      if (local && local.user) {
+        this._user = local.user;
+        this._likedListCount = local.likedListCount || 0;
+        if (Array.isArray(local.playlist)) this._playlist = local.playlist;
+        this._state = 'logged-in';
+        this.render();
+        // 后台静默验证 cookie 是否仍有效，有效则刷新用户信息；无效则清退
+        this._silentRefresh();
+        return true;
+      }
+      // 无本地数据，走在线验证
       const statusRes = await this._api('/login/status', { timestamp: Date.now() });
       const data = statusRes.data || statusRes;
       if (data && (data.account || (data.profile && data.profile.userId))) {
@@ -282,10 +337,76 @@ window.Netease = {
     return false;
   },
 
+  // 后台静默刷新：验证 cookie 有效性并更新用户信息/喜欢数量（不阻塞 UI）
+  async _silentRefresh() {
+    try {
+      const statusRes = await this._api('/login/status', { timestamp: Date.now() });
+      const data = statusRes.data || statusRes;
+      if (!data || (!data.account && !(data.profile && data.profile.userId))) {
+        // cookie 已失效：清退
+        this._cookie = '';
+        await this._saveCookie(null);
+        await this._clearLocalData();
+        this._user = null;
+        this._playlist = [];
+        this._likedListCount = 0;
+        this._state = 'logged-out';
+        this._phase = 'login';
+        this.render();
+        this._startLogin();
+        return;
+      }
+      // cookie 有效：刷新用户信息 + 喜欢数量
+      this._user = (data.account || data.profile) ? data : (data.data || data);
+      const userId = (this._user && this._user.account && this._user.account.id)
+        || (this._user && this._user.profile && this._user.profile.userId);
+      if (userId) {
+        let count = 0;
+        try {
+          const likeRes = await this._api('/likelist', { uid: userId, timestamp: Date.now() });
+          const ids = likeRes.ids || (likeRes.data && likeRes.data.ids) || [];
+          count = Array.isArray(ids) ? ids.length : 0;
+        } catch (e) { /* 忽略 */ }
+        if (count === 0) {
+          try {
+            const plRes = await this._api('/user/playlist', { uid: userId, limit: 1, timestamp: Date.now() });
+            const playlist = plRes.playlist || (plRes.data && plRes.data.playlist) || [];
+            if (Array.isArray(playlist) && playlist.length > 0) count = playlist[0].trackCount || 0;
+          } catch (e) { /* 忽略 */ }
+        }
+        this._likedListCount = count;
+        this._saveLocalData();
+        this.render();
+        // 后台刷新播放列表
+        this._loadPlaylist();
+      }
+    } catch (e) { /* 静默失败，保留本地数据 */ }
+  },
+
   // 持久化 cookie 到 data/netease-cookie.json（传 null 清空）
   _saveCookie(cookie) {
     const data = cookie ? { cookie: cookie, savedAt: Date.now() } : { cookie: '' };
     return window.workbench.writeData('netease-cookie.json', data);
+  },
+
+  // 持久化用户数据到 data/netease-data.json（用户信息 + 播放列表 + 喜欢数量）
+  _saveLocalData() {
+    return window.workbench.writeData('netease-data.json', {
+      user: this._user,
+      playlist: this._playlist,
+      likedListCount: this._likedListCount,
+      savedAt: Date.now()
+    });
+  },
+
+  // 读取本地持久化的用户数据
+  _loadLocalData() {
+    return window.workbench.readData('netease-data.json');
+  },
+
+  // 清空本地持久化的用户数据
+  _clearLocalData() {
+    return window.workbench.writeData('netease-data.json', {});
   },
 
   // -------------------------------------------------------------------
@@ -406,7 +527,10 @@ window.Netease = {
         this._likedListCount = count;
       }
       // cookie 有效（拿到 userId），持久化以便下次免扫码
-      if (userId) this._saveCookie(this._cookie);
+      if (userId) {
+        this._saveCookie(this._cookie);
+        this._saveLocalData();
+      }
       this._state = 'logged-in';
       this.render();
       // 登录后自动加载播放列表（前 100 首），20 秒超时，失败显示重试按钮
@@ -517,6 +641,7 @@ window.Netease = {
       this._currentTime = audio.currentTime || 0;
       this._duration = audio.duration || 0;
       this._updateProgress();
+      this._updateLyricHighlight();
     });
     audio.addEventListener('ended', () => { this._handleTrackEnd(); });
     audio.addEventListener('play', () => { this._isPlaying = true; this._updatePlayBtn(); });
@@ -549,12 +674,16 @@ window.Netease = {
         return songs.map((s) => ({
           id: s.id,
           name: s.name,
-          artist: (s.ar || s.artists || []).map((a) => a.name).join('/')
+          artist: (s.ar || s.artists || []).map((a) => a.name).join('/'),
+          album: (s.al && s.al.name) || '',
+          duration: s.dt || 0,
+          cover: (s.al && s.al.picUrl) ? String(s.al.picUrl).replace(/^http:\/\//i, 'https://') : ''
         }));
       })();
       const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 20000));
       this._playlist = await Promise.race([fetchAll, timeout]);
       this._playlistLoading = false;
+      this._saveLocalData();
       this.render();
     } catch (err) {
       this._playlistLoading = false;
@@ -594,7 +723,10 @@ window.Netease = {
       // 自动加载歌词（不自动显示面板）
       this._loadLyrics(song.id);
     } catch (err) {
-      UI.setToast('播放失败：' + err.message, 'error');
+      // AbortError: play() 被新 load 请求中断（快速切歌/自动连播），属正常情况，静默
+      if (err.name !== 'AbortError' && !/interrupted by a new load request/.test(err.message)) {
+        UI.setToast('播放失败：' + err.message, 'error');
+      }
     }
     this._loadingTrack = false;
     this._updatePlayerUi();
@@ -929,6 +1061,7 @@ window.Netease = {
       await this._api('/logout', { timestamp: Date.now() });
     } catch (e) { /* 忽略 */ }
     this._saveCookie(null);
+    this._clearLocalData();
     this._cookie = '';
     this._user = null;
     this._likedListCount = 0;

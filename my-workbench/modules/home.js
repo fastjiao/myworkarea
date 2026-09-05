@@ -92,6 +92,24 @@ window.Home = {
 
     const title = UI.el('div', 'section-title');
     title.appendChild(UI.el('span', '', '网页快捷方式'));
+    // 搜索框 + 搜索按钮（输入回车或点击按钮跳转浏览器搜索）
+    const searchBox = UI.el('div', 'web-search-box');
+    const searchInput = UI.el('input', 'web-search-input');
+    searchInput.type = 'text';
+    searchInput.placeholder = '搜索…';
+    const doSearch = () => {
+      const q = searchInput.value.trim();
+      if (!q) return;
+      window.workbench.openUrl('https://www.baidu.com/s?wd=' + encodeURIComponent(q));
+    };
+    searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
+    const searchBtn = UI.el('button', 'web-search-btn');
+    searchBtn.innerHTML = window.svgIcon('search-bold', 18);
+    searchBtn.title = '搜索';
+    searchBtn.addEventListener('click', doSearch);
+    searchBox.appendChild(searchInput);
+    searchBox.appendChild(searchBtn);
+    title.appendChild(searchBox);
     const addBtn = UI.el('button', 'btn btn-primary btn-sm');
     addBtn.appendChild(UI.icon('plus', 14));
     addBtn.appendChild(UI.el('span', '', '添加网页'));
