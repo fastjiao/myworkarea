@@ -11,7 +11,7 @@
 // =====================================================================
 
 const { app, BrowserWindow, ipcMain, dialog, shell, session, screen, Menu, net, Tray, nativeImage } = require('electron');
-const { exec, fork, execFile } = require('child_process');
+const { exec, fork } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -642,37 +642,6 @@ ipcMain.handle('netease:stop-api', async () => {
     return { stopped: true };
   }
   return { stopped: false };
-});
-
-/**
- * 发送媒体键，控制外部网易云 PC 客户端（播放/暂停、上一首、下一首、停止）
- * @param {'play-pause'|'prev'|'next'|'stop'} key 媒体键名
- * 说明：通过 PowerShell 调 user32.keybd_event 模拟全局媒体键。
- *       媒体键作用于系统当前默认播放器（通常是网易云客户端）。
- */
-ipcMain.handle('netease:media-key', async (event, key) => {
-  // 虚拟键码：PlayPause=179, PrevTrack=177, NextTrack=176, Stop=178
-  const VK = { 'play-pause': 179, 'prev': 177, 'next': 176, 'stop': 178 };
-  const vk = VK[key];
-  if (!vk) return { success: false, message: '未知媒体键：' + key };
-  const psScript = "Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class NK{[DllImport(\"user32.dll\")]public static extern void keybd_event(byte b,byte s,uint f,IntPtr i);}' -ErrorAction SilentlyContinue;[NK]::keybd_event(" + vk + ",0,0,[IntPtr]::Zero);[NK]::keybd_event(" + vk + ",0,2,[IntPtr]::Zero)";
-  return new Promise((resolve) => {
-    execFile('powershell', ['-NoProfile', '-Command', psScript], (err) => {
-      resolve({ success: !err, message: err ? ('发送失败：' + err.message) : 'ok' });
-    });
-  });
-});
-
-/**
- * 关闭网易云音乐 PC 客户端进程（主进程名 cloudmusic.exe）
- */
-ipcMain.handle('netease:kill-client', async () => {
-  return new Promise((resolve) => {
-    exec('taskkill /F /IM cloudmusic.exe', (err) => {
-      if (err) resolve({ success: false, message: '未找到运行中的网易云音乐客户端' });
-      else resolve({ success: true, message: '已关闭网易云音乐客户端' });
-    });
-  });
 });
 
 /**

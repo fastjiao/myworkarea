@@ -2338,8 +2338,8 @@ body {
 }
 
 .netease-qr-wrap {
-  width: 200px;
-  height: 200px;
+  width: 240px;
+  height: 240px;
   margin: 0 auto 16px;
   display: flex;
   align-items: center;
@@ -2350,9 +2350,15 @@ body {
 }
 
 .netease-qr-img {
-  width: 100%;
-  height: 100%;
+  width: 200px;
+  height: 200px;
   object-fit: contain;
+  margin: 0 auto 16px;
+  display: block;
+  background: #fff;
+  border-radius: 8px;
+  padding: 10px;
+  box-sizing: border-box;
 }
 
 .netease-qr-placeholder {
@@ -2374,6 +2380,24 @@ body {
   gap: 12px;
   margin-top: 8px;
 }
+
+.netease-input {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  font-size: 14px;
+  outline: none;
+}
+.netease-input::placeholder { color: rgba(255,255,255,0.4); }
+.netease-input:focus { border-color: rgba(95,134,255,0.6); }
+body[data-theme='light'] .netease-input {
+  border: 1px solid #d0d0d5;
+  background: #fff;
+  color: #1d1d1f;
+}
+body[data-theme='light'] .netease-input::placeholder { color: #999; }
 
 .netease-btn {
   background: rgba(95, 134, 255, 0.15);
@@ -2418,55 +2442,6 @@ body {
   to { transform: rotate(360deg); }
 }
 
-/* 已登录：头像 + 昵称 + 喜欢音乐数量 */
-.netease-avatar-wrap {
-  width: 84px;
-  height: 84px;
-  margin: 8px auto 16px;
-  border-radius: 50%;
-  overflow: hidden;
-  background: rgba(95, 134, 255, 0.15);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 2px solid rgba(95, 134, 255, 0.4);
-}
-
-.netease-avatar {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.netease-nickname {
-  font-size: 17px;
-  font-weight: 600;
-  color: #fff;
-  margin-bottom: 16px;
-}
-
-.netease-stat {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 12px 24px;
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: 8px;
-  margin-bottom: 20px;
-}
-
-.netease-stat-num {
-  font-size: 24px;
-  font-weight: 700;
-  color: #5f86ff;
-}
-
-.netease-stat-label {
-  font-size: 12px;
-  color: #a0a0b8;
-  margin-top: 4px;
-}
-
 .netease-error-title {
   font-size: 15px;
   font-weight: 600;
@@ -2474,35 +2449,7 @@ body {
   margin: 12px 0 8px;
 }
 
-/* ===== 网易云播放器 ===== */
-.netease-now {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 14px;
-}
-.netease-now-name {
-  flex: 1;
-  min-width: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: #fff;
-  text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.netease-now-artist {
-  flex-shrink: 0;
-  max-width: 45%;
-  font-size: 12px;
-  color: #a0a0b8;
-  text-align: right;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+/* ===== 全局底部播放条 ===== */
 .netease-progress {
   cursor: pointer;
   padding: 5px 0;
@@ -2527,14 +2474,6 @@ body {
 }
 .netease-progress:hover .netease-progress-fill {
   background: #7c9bff;
-}
-.netease-time {
-  font-size: 11px;
-  color: #a0a0b8;
-  margin-bottom: 16px;
-}
-.netease-player-ctrl {
-  margin-bottom: 18px;
 }
 .netease-icon-btn {
   display: inline-flex;
@@ -2579,4 +2518,347 @@ body {
   color: #a0a0b8;
   margin-left: 8px;
   flex-shrink: 0;
+}
+
+/* ===== 循环 / 随机 切换按钮 ===== */
+.netease-toggle-btn {
+  position: relative;
+}
+.netease-toggle-btn.active {
+  background: rgba(95, 134, 255, 0.22);
+  border-color: rgba(95, 134, 255, 0.5);
+  color: #a9c2ff;
+}
+/* 单曲循环：右上角「1」角标 */
+.netease-toggle-btn.loop-one::after {
+  content: '1';
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  font-size: 9px;
+  line-height: 1;
+  background: #5f86ff;
+  color: #fff;
+  border-radius: 999px;
+  padding: 2px 4px;
+}
+
+/* ===== 网易云面板 · 浅色主题（Apple HIG 极简风） ===== */
+body[data-theme='light'] .netease-card {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  box-shadow: 0 4px 24px rgba(15, 23, 42, 0.07);
+  color: #3c3c43;
+}
+body[data-theme='light'] .netease-card-title { color: #1d1d1f; }
+body[data-theme='light'] .netease-now-name { color: #1d1d1f; }
+body[data-theme='light'] .netease-now-artist,
+body[data-theme='light'] .netease-time,
+body[data-theme='light'] .netease-tip { color: #8e8e93; }
+body[data-theme='light'] .netease-btn {
+  background: #f2f2f7;
+  color: #3c3c43;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+body[data-theme='light'] .netease-btn:hover { background: #e8e8ed; }
+body[data-theme='light'] .netease-btn-danger {
+  background: rgba(255, 59, 48, 0.08);
+  color: #ff3b30;
+  border: 1px solid rgba(255, 59, 48, 0.18);
+}
+body[data-theme='light'] .netease-progress-track { background: rgba(0, 0, 0, 0.08); }
+body[data-theme='light'] .netease-progress-fill { background: #5f86ff; }
+body[data-theme='light'] .netease-progress:hover .netease-progress-fill { background: #3f6bff; }
+body[data-theme='light'] .netease-track { border-bottom-color: rgba(0, 0, 0, 0.04); }
+body[data-theme='light'] .netease-track-name { color: #1d1d1f; }
+body[data-theme='light'] .netease-track-artist { color: #8e8e93; }
+body[data-theme='light'] .netease-track:hover { background: rgba(95, 134, 255, 0.08); }
+body[data-theme='light'] .netease-track.active { background: rgba(95, 134, 255, 0.14); }
+body[data-theme='light'] .netease-qr-wrap { background: #f2f2f7; }
+body[data-theme='light'] .netease-qr-placeholder { color: #c7c7cc; }
+body[data-theme='light'] .netease-toggle-btn.active {
+  background: rgba(95, 134, 255, 0.12);
+  color: #5f86ff;
+  border-color: rgba(95, 134, 255, 0.35);
+}
+body[data-theme='light'] .netease-error-title { color: #ff3b30; }
+
+/* ===== 网易云页面顶栏（页面内菜单栏，模仿网易云） ===== */
+.netease-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  background: #1e1e2d;
+  border: 1px solid rgba(95, 134, 255, 0.15);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  margin-bottom: 18px;
+}
+.netease-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+}
+.netease-topbar-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+}
+.netease-topbar-menu {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  background: rgba(95, 134, 255, 0.12);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.netease-topbar-menu:hover {
+  background: rgba(95, 134, 255, 0.2);
+}
+.netease-topbar-menu.active {
+  background: rgba(95, 134, 255, 0.34);
+}
+.netease-topbar-menu-name {
+  font-size: 13px;
+  color: #e4e4ef;
+}
+/* 「我喜欢的音乐」右上角数量角标（纯数字，无填充） */
+.netease-like-badge {
+  font-size: 12px;
+  font-weight: 500;
+  color: #a0a0b8;
+  margin-left: 2px;
+}
+.netease-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.netease-mini-avatar-wrap {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: rgba(95, 134, 255, 0.18);
+  border: 1px solid rgba(95, 134, 255, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.netease-mini-avatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.netease-mini-name {
+  font-size: 13px;
+  color: #e4e4ef;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+.netease-btn-text {
+  border-color: transparent !important;
+}
+
+/* ===== 我喜欢列表（页面内容区，随页面滚动） ===== */
+.netease-list-wrap {
+  display: flex;
+  justify-content: center;
+}
+.netease-track-list-page {
+  width: 100%;
+  max-width: 900px;
+  max-height: none;
+  border: 1px solid rgba(95, 134, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(30, 30, 45, 0.55);
+  overflow: hidden;
+  margin-top: 2px;
+}
+.netease-list-empty {
+  flex: 0 1 380px;
+}
+.netease-track-idx {
+  width: 28px;
+  text-align: right;
+  font-size: 12px;
+  color: #6f6f8a;
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+.netease-track-list-page .netease-track {
+  padding: 10px 14px;
+}
+
+/* ===== 全局底部播放条 ===== */
+.netease-player-bar {
+  position: fixed;
+  left: 210px;           /* 避开左侧侧边栏 */
+  right: 0;
+  bottom: 0;
+  height: 76px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 0 20px;
+  background: rgba(24, 24, 38, 0.92);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  border-top: 1px solid rgba(95, 134, 255, 0.25);
+  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.35);
+  z-index: 60;
+  /* 默认隐藏，登录后滑入 */
+  transform: translateY(100%);
+  transition: transform 0.25s ease;
+}
+.netease-player-bar.show {
+  transform: translateY(0);
+}
+/* 播放条显示时给主内容区让出底部空间 */
+body.netease-bar-active .app-main {
+  padding-bottom: 96px;
+}
+.netease-bar-now {
+  width: 220px;
+  flex-shrink: 0;
+  min-width: 0;
+}
+.netease-bar-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.netease-bar-artist {
+  font-size: 11px;
+  color: #a0a0b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+.netease-bar-progress {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.netease-bar-track-wrap {
+  flex: 1;
+  padding: 6px 0;
+  margin-bottom: 0;
+}
+.netease-bar-time {
+  font-size: 11px;
+  color: #a0a0b8;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.netease-bar-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ===== 网易云 · 浅色主题适配（顶栏 / 播放条 / 列表） ===== */
+body[data-theme='light'] .netease-topbar {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.05);
+  box-shadow: 0 4px 24px rgba(15, 23, 42, 0.07);
+}
+body[data-theme='light'] .netease-topbar-title { color: #1d1d1f; }
+body[data-theme='light'] .netease-topbar-menu { background: #f2f2f7; }
+body[data-theme='light'] .netease-topbar-menu:hover { background: #e8e8ed; }
+body[data-theme='light'] .netease-topbar-menu.active { background: #d7e0ff; }
+body[data-theme='light'] .netease-topbar-menu-name { color: #3c3c43; }
+body[data-theme='light'] .netease-mini-name { color: #3c3c43; }
+body[data-theme='light'] .netease-mini-avatar-wrap {
+  background: #f2f2f7;
+  border-color: rgba(0, 0, 0, 0.08);
+}
+body[data-theme='light'] .netease-track-list-page {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.05);
+  box-shadow: 0 4px 24px rgba(15, 23, 42, 0.06);
+}
+body[data-theme='light'] .netease-track-idx { color: #c7c7cc; }
+body[data-theme='light'] .netease-player-bar {
+  background: rgba(255, 255, 255, 0.94);
+  border-top-color: rgba(0, 0, 0, 0.06);
+  box-shadow: 0 -6px 24px rgba(15, 23, 42, 0.08);
+}
+body[data-theme='light'] .netease-bar-name { color: #1d1d1f; }
+body[data-theme='light'] .netease-bar-artist,
+body[data-theme='light'] .netease-bar-time { color: #8e8e93; }
+
+/* ===== 用户头像悬浮弹窗 ===== */
+.netease-user-wrap { position: relative; display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.netease-user-popup {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  padding: 8px;
+  background: rgba(30, 30, 45, 0.96);
+  backdrop-filter: blur(18px);
+  border: 1px solid rgba(95, 134, 255, 0.2);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+}
+.netease-user-wrap:hover .netease-user-popup { display: block; }
+body[data-theme='light'] .netease-user-popup { background: rgba(255,255,255,0.96); border-color: rgba(0,0,0,0.08); box-shadow: 0 8px 32px rgba(15,23,42,0.12); }
+
+/* ===== 歌词面板 ===== */
+.netease-lyric-panel {
+  position: fixed;
+  left: 210px;
+  right: 0;
+  bottom: 76px;
+  top: 0;
+  background: rgba(18, 18, 30, 0.92);
+  backdrop-filter: blur(20px);
+  z-index: 55;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 40px 20px;
+}
+.netease-lyric-panel.show { display: flex; }
+.netease-lyric-list { width: 100%; max-width: 600px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.netease-lyric-line { font-size: 14px; color: rgba(255,255,255,0.35); text-align: center; transition: all 0.3s ease; line-height: 1.6; }
+.netease-lyric-line.active { color: #fff; font-size: 16px; font-weight: 600; transform: scale(1.05); }
+.netease-lyric-empty { color: rgba(255,255,255,0.3); font-size: 14px; text-align: center; }
+body[data-theme='light'] .netease-lyric-panel { background: rgba(255,255,255,0.92); }
+body[data-theme='light'] .netease-lyric-line { color: rgba(0,0,0,0.3); }
+body[data-theme='light'] .netease-lyric-line.active { color: #1d1d1f; }
+body[data-theme='light'] .netease-lyric-empty { color: rgba(0,0,0,0.25); }
+
+/* ===== 播放模式按钮（合并后） ===== */
+.netease-playmode-btn { position: relative; }
+.netease-playmode-btn.loop-one::after {
+  content: '1';
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  font-size: 9px;
+  background: #5f86ff;
+  color: #fff;
+  border-radius: 999px;
+  padding: 2px 4px;
 }

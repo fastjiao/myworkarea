@@ -157,11 +157,6 @@ contextBridge.exposeInMainWorld('workbench', {
   /** 停止网易云 API 子进程 */
   neteaseStopApi: () => ipcRenderer.invoke('netease:stop-api'),
 
-  /** 发送媒体键控制外部网易云 PC 客户端（'play-pause'|'prev'|'next'|'stop'） */
-  neteaseMediaKey: (key) => ipcRenderer.invoke('netease:media-key', key),
-  /** 关闭网易云 PC 客户端进程 */
-  neteaseKillClient: () => ipcRenderer.invoke('netease:kill-client'),
-
   // ======================== 桌面程序签到（PowerShell 自动化） ========================
 
   /**

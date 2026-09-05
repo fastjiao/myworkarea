@@ -298,6 +298,13 @@ function switchPage(pageName) {
   document.querySelectorAll('.page').forEach((page) => {
     page.classList.toggle('active', page.id === 'page-' + pageName);
   });
+  // 时钟只在首页（dashboard）显示，其他页面隐藏
+  const clock = document.getElementById('clock-widget');
+  if (clock) clock.style.display = (pageName === 'dashboard') ? '' : 'none';
+  // 网易云播放底栏只在「音乐」(netease) 页面显示，其他页面隐藏
+  const neteaseBar = document.getElementById('netease-player-bar');
+  if (neteaseBar) neteaseBar.style.display = (pageName === 'netease') ? '' : 'none';
+  document.body.classList.toggle('netease-bar-active', pageName === 'netease' && neteaseBar && neteaseBar.classList.contains('show'));
   const mod = PAGE_MODULES[pageName];
   if (mod && typeof mod.render === 'function') {
     mod.render();
