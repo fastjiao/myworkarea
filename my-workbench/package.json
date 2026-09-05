@@ -29,6 +29,7 @@
       "main.js",
       "preload.js",
       "renderer.js",
+      "netease-api-host.js",
       "index.html",
       "styles.css",
       "modules/**/*",
@@ -56,6 +57,7 @@
   "license": "MIT",
   "dependencies": {
     "duckduckgo-websearch": "^2.0.3",
+    "NeteaseCloudMusicApi": "^4.32.0",
     "openai": "^4.73.0"
   },
   "devDependencies": {

@@ -2297,3 +2297,286 @@ body {
     transition: none;
   }
 }
+
+/* ---------------------------------------------------------------------
+   网易云音乐控制面板（Netease）
+   深色科技风：背景 #1e1e2d，卡片圆角 8px
+   --------------------------------------------------------------------- */
+.netease-panel {
+  margin-top: 16px;
+  max-width: 1160px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.netease-qr-box {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 24px 0;
+}
+
+.netease-card {
+  flex: 1 1 320px;
+  max-width: 380px;
+  background: #1e1e2d;
+  border-radius: 8px;
+  padding: 26px 24px;
+  text-align: center;
+  color: #e4e4ef;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(95, 134, 255, 0.15);
+}
+
+.netease-card-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 18px;
+  color: #fff;
+}
+
+.netease-qr-wrap {
+  width: 200px;
+  height: 200px;
+  margin: 0 auto 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.netease-qr-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.netease-qr-placeholder {
+  color: #1e1e2d;
+  opacity: 0.5;
+}
+
+.netease-tip {
+  font-size: 13px;
+  color: #a0a0b8;
+  margin: 8px 0 18px;
+  line-height: 1.6;
+}
+
+.netease-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.netease-btn {
+  background: rgba(95, 134, 255, 0.15);
+  color: #a9c2ff;
+  border: 1px solid rgba(95, 134, 255, 0.3);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.netease-btn:hover {
+  background: rgba(95, 134, 255, 0.25);
+}
+
+.netease-btn-danger {
+  background: rgba(255, 77, 79, 0.15);
+  color: #ff7875;
+  border: 1px solid rgba(255, 77, 79, 0.3);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.netease-btn-danger:hover {
+  background: rgba(255, 77, 79, 0.25);
+}
+
+/* 登录中：加载动画 */
+.netease-spinner {
+  width: 42px;
+  height: 42px;
+  margin: 24px auto 20px;
+  border: 3px solid rgba(95, 134, 255, 0.2);
+  border-top-color: #5f86ff;
+  border-radius: 50%;
+  animation: netease-spin 0.8s linear infinite;
+}
+
+@keyframes netease-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 已登录：头像 + 昵称 + 喜欢音乐数量 */
+.netease-avatar-wrap {
+  width: 84px;
+  height: 84px;
+  margin: 8px auto 16px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: rgba(95, 134, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(95, 134, 255, 0.4);
+}
+
+.netease-avatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.netease-nickname {
+  font-size: 17px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 16px;
+}
+
+.netease-stat {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 24px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.netease-stat-num {
+  font-size: 24px;
+  font-weight: 700;
+  color: #5f86ff;
+}
+
+.netease-stat-label {
+  font-size: 12px;
+  color: #a0a0b8;
+  margin-top: 4px;
+}
+
+.netease-error-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #ff7875;
+  margin: 12px 0 8px;
+}
+
+/* ===== 网易云播放器 ===== */
+.netease-now {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.netease-now-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.netease-now-artist {
+  flex-shrink: 0;
+  max-width: 45%;
+  font-size: 12px;
+  color: #a0a0b8;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.netease-progress {
+  cursor: pointer;
+  padding: 5px 0;
+  margin-bottom: 4px;
+}
+.netease-progress-track {
+  height: 5px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.netease-progress-fill {
+  height: 100%;
+  background: #5f86ff;
+  width: 0;
+  border-radius: 3px;
+  transition: width 0.2s linear;
+}
+/* 拖动中关闭过渡，保证跟手 */
+.netease-progress.dragging .netease-progress-fill {
+  transition: none;
+}
+.netease-progress:hover .netease-progress-fill {
+  background: #7c9bff;
+}
+.netease-time {
+  font-size: 11px;
+  color: #a0a0b8;
+  margin-bottom: 16px;
+}
+.netease-player-ctrl {
+  margin-bottom: 18px;
+}
+.netease-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 12px;
+}
+.netease-icon-btn svg {
+  display: block;
+}
+.netease-track-list {
+  max-height: 260px;
+  overflow-y: auto;
+  margin-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.netease-track {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 8px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  transition: background 0.15s;
+}
+.netease-track:hover {
+  background: rgba(95, 134, 255, 0.12);
+}
+.netease-track.active {
+  background: rgba(95, 134, 255, 0.22);
+}
+.netease-track-name {
+  font-size: 13px;
+  color: #e4e4ef;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+.netease-track-artist {
+  font-size: 11px;
+  color: #a0a0b8;
+  margin-left: 8px;
+  flex-shrink: 0;
+}

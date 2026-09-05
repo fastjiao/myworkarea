@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <!-- 内容安全策略：只允许加载本地脚本与样式，提升安全性 -->
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; media-src 'self' http: https:;">
   <title>教公台-阡稻工作室</title>
   <!-- 引入全局样式 -->
   <link rel="stylesheet" href="styles.css">
@@ -59,6 +59,10 @@
           <span class="nav-icon" data-icon="search"></span>
           <span class="nav-label">全部技能</span>
         </button>
+        <button class="nav-item" data-page="netease">
+          <span class="nav-icon" data-icon="music"></span>
+          <span class="nav-label">网易云音乐</span>
+        </button>
 
       </nav>
 
@@ -81,6 +85,7 @@
         <section id="page-skills" class="page"></section>
         <section id="page-skill-finder" class="page"></section>
         <section id="page-sign" class="page"></section>
+        <section id="page-netease" class="page"></section>
       </main>
     </div>
   </div>
@@ -143,6 +148,7 @@
   <script src="modules/skills.js"></script>
   <script src="modules/skill-finder.js"></script>
   <script src="modules/sign.js"></script>
+  <script src="modules/netease.js"></script>
   <script src="modules/clock.js"></script>
   <script src="modules/settings.js"></script>
   <script src="renderer.js"></script>

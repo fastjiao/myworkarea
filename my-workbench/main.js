@@ -11,9 +11,10 @@
 // =====================================================================
 
 const { app, BrowserWindow, ipcMain, dialog, shell, session, screen, Menu, net, Tray, nativeImage } = require('electron');
-const { exec } = require('child_process');
+const { exec, fork, execFile } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
 
 // ---------------------------------------------------------------------
 // 常量定义
@@ -29,7 +30,7 @@ const DATA_DIR = app.isPackaged
   : path.join(__dirname, 'data');
 
 // 允许读写的数据文件白名单（防止渲染进程通过文件名参数访问任意文件）
-const ALLOWED_FILES = ['apps.json', 'events.json', 'skills.json', 'settings.json', 'sign-tasks.json', 'bg-run.json'];
+const ALLOWED_FILES = ['apps.json', 'events.json', 'skills.json', 'settings.json', 'sign-tasks.json', 'bg-run.json', 'netease-cookie.json'];
 
 // 每个数据文件对应的默认值（文件不存在或损坏时使用）
 const DEFAULT_VALUES = {
@@ -39,7 +40,9 @@ const DEFAULT_VALUES = {
   'settings.json': { theme: 'light' },
   'sign-tasks.json': [],
   // 「关闭后继续后台运行」独立文件（主进程持有，避免与渲染进程的 settings.json 互相覆盖）
-  'bg-run.json': { enabled: false }
+  'bg-run.json': { enabled: false },
+  // 网易云登录 cookie 持久化（扫码一次后下次免扫码）
+  'netease-cookie.json': { cookie: '' }
 };
 
 // ---------------------------------------------------------------------
@@ -542,6 +545,134 @@ function resolveCommandPath(cmd) {
  */
 ipcMain.handle('data:read', async (event, filename) => {
   return readData(filename);
+});
+
+// ======================== 网易云音乐 API 代理 ========================
+// 渲染进程受同源策略限制，无法直接 fetch localhost:3000；
+// 由主进程用 Node http 模块代理请求，既规避跨域，又无需关闭 webSecurity。
+// 说明：本应用只做前端 UI 与接口封装，NeteaseCloudMusicApi 服务需自行启动。
+const NETEASE_API_HOST = 'localhost';
+const NETEASE_API_PORT = 3000;
+
+/**
+ * 代理请求网易云音乐 API
+ * @param {{ apiPath: string, query?: object, cookie?: string }} arg
+ * @returns {Promise<{success: boolean, status?: number, body?: string, setCookie?: string[], message?: string}>}
+ */
+ipcMain.handle('netease:fetch', async (event, { apiPath, query, cookie }) => {
+  return new Promise((resolve) => {
+    // 拼接查询字符串（自动编码中文/特殊字符）
+    const qs = query ? '?' + new URLSearchParams(query).toString() : '';
+    const options = {
+      hostname: NETEASE_API_HOST,
+      port: NETEASE_API_PORT,
+      path: apiPath + qs,
+      method: 'GET',
+      headers: { 'User-Agent': 'Mozilla/5.0 (Electron Netease Panel)' }
+    };
+    // 登录后的后续请求需携带 Cookie
+    if (cookie) options.headers['Cookie'] = cookie;
+
+    const req = http.request(options, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => {
+        // 回传 set-cookie，便于渲染进程拼接 Cookie
+        const setCookie = res.headers['set-cookie'] || [];
+        resolve({ success: true, status: res.statusCode, body, setCookie });
+      });
+    });
+    req.on('error', (err) => {
+      // 服务未启动 / 连接拒绝等
+      resolve({ success: false, message: err.message });
+    });
+    req.end();
+  });
+});
+
+// 网易云 API 子进程引用（由 netease:start-api fork，应用退出时需清理）
+let neteaseApiProc = null;
+
+/**
+ * 自动启动 NeteaseCloudMusicApi 子进程（fork netease-api-host.js）
+ * @returns {Promise<{running?: boolean, port?: number, failed?: boolean, reason?: string}>}
+ */
+ipcMain.handle('netease:start-api', async () => {
+  // 已在运行：直接返回
+  if (neteaseApiProc && !neteaseApiProc.killed) {
+    return { running: true, port: 3000 };
+  }
+  return new Promise((resolve) => {
+    const hostPath = path.join(__dirname, 'netease-api-host.js');
+    let settled = false;
+    const done = (r) => { if (!settled) { settled = true; resolve(r); } };
+    let proc;
+    try {
+      proc = fork(hostPath, [], { silent: true });
+    } catch (e) {
+      return done({ failed: true, reason: '启动子进程失败：' + e.message });
+    }
+    neteaseApiProc = proc;
+    // 子进程回报启动结果
+    proc.on('message', (msg) => {
+      if (msg && msg.ok) done({ running: true, port: msg.port || 3000 });
+      else done({ failed: true, reason: (msg && msg.error) || 'API 服务启动失败' });
+    });
+    // 子进程退出：若尚未 settled 且非 0，视为失败（多为包未安装）
+    proc.on('exit', (code) => {
+      if (neteaseApiProc === proc) neteaseApiProc = null;
+      if (!settled && code !== 0) {
+        done({ failed: true, reason: '子进程异常退出（code=' + code + '），可能未安装 NeteaseCloudMusicApi，请在 my-workbench 目录运行 npm install NeteaseCloudMusicApi' });
+      }
+    });
+    proc.on('error', (err) => done({ failed: true, reason: err.message }));
+    // 启动超时兜底
+    setTimeout(() => done({ failed: true, reason: 'API 服务启动超时' }), 15000);
+  });
+});
+
+/**
+ * 停止网易云 API 子进程
+ */
+ipcMain.handle('netease:stop-api', async () => {
+  if (neteaseApiProc && !neteaseApiProc.killed) {
+    neteaseApiProc.kill();
+    neteaseApiProc = null;
+    return { stopped: true };
+  }
+  return { stopped: false };
+});
+
+/**
+ * 发送媒体键，控制外部网易云 PC 客户端（播放/暂停、上一首、下一首、停止）
+ * @param {'play-pause'|'prev'|'next'|'stop'} key 媒体键名
+ * 说明：通过 PowerShell 调 user32.keybd_event 模拟全局媒体键。
+ *       媒体键作用于系统当前默认播放器（通常是网易云客户端）。
+ */
+ipcMain.handle('netease:media-key', async (event, key) => {
+  // 虚拟键码：PlayPause=179, PrevTrack=177, NextTrack=176, Stop=178
+  const VK = { 'play-pause': 179, 'prev': 177, 'next': 176, 'stop': 178 };
+  const vk = VK[key];
+  if (!vk) return { success: false, message: '未知媒体键：' + key };
+  const psScript = "Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class NK{[DllImport(\"user32.dll\")]public static extern void keybd_event(byte b,byte s,uint f,IntPtr i);}' -ErrorAction SilentlyContinue;[NK]::keybd_event(" + vk + ",0,0,[IntPtr]::Zero);[NK]::keybd_event(" + vk + ",0,2,[IntPtr]::Zero)";
+  return new Promise((resolve) => {
+    execFile('powershell', ['-NoProfile', '-Command', psScript], (err) => {
+      resolve({ success: !err, message: err ? ('发送失败：' + err.message) : 'ok' });
+    });
+  });
+});
+
+/**
+ * 关闭网易云音乐 PC 客户端进程（主进程名 cloudmusic.exe）
+ */
+ipcMain.handle('netease:kill-client', async () => {
+  return new Promise((resolve) => {
+    exec('taskkill /F /IM cloudmusic.exe', (err) => {
+      if (err) resolve({ success: false, message: '未找到运行中的网易云音乐客户端' });
+      else resolve({ success: true, message: '已关闭网易云音乐客户端' });
+    });
+  });
 });
 
 /**
@@ -1822,6 +1953,11 @@ app.whenReady().then(() => {
 // 真正退出前放行 close 拦截（托盘退出 / 菜单退出 / 系统退出都会触发）
 app.on('before-quit', () => {
   quitting = true;
+  // 清理网易云 API 子进程
+  if (neteaseApiProc && !neteaseApiProc.killed) {
+    neteaseApiProc.kill();
+    neteaseApiProc = null;
+  }
 });
 
 // 所有窗口都关闭时退出应用（Windows / Linux 惯例；macOS 例外）

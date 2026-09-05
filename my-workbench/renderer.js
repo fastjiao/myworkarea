@@ -451,6 +451,7 @@ async function init() {
   PAGE_MODULES.skills = window.Skills;
   PAGE_MODULES['skill-finder'] = window.SkillFinder;
   PAGE_MODULES.sign = window.Sign;
+  PAGE_MODULES.netease = window.Netease;
 
   // 5. 绑定导航点击
   document.querySelectorAll('.nav-item').forEach((btn) => {
@@ -501,7 +502,7 @@ async function init() {
   });
 
   // 9. 初始化各功能模块
-  [window.Dashboard, window.Home, window.Calendar, window.Skills, window.SkillFinder, window.Sign].forEach((mod) => {
+  [window.Dashboard, window.Home, window.Calendar, window.Skills, window.SkillFinder, window.Sign, window.Netease].forEach((mod) => {
     if (mod && typeof mod.init === 'function') mod.init();
   });
 
