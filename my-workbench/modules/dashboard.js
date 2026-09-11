@@ -123,9 +123,7 @@ window.Dashboard = {
     const entries = [
       { icon: 'app',      title: '快捷启动', desc: '软件、文件、网页快捷方式', page: 'home' },
       { icon: 'flag',     title: '一键签到', desc: '网页 / 桌面任务自动签到', page: 'sign' },
-      { icon: 'calendar', title: '日历',     desc: '查看与管理日程事件',     page: 'calendar' },
-      { icon: 'compass',  title: '技能发现', desc: '探索可用技能',           page: 'skill-finder' },
-      { icon: 'search',   title: '全部技能', desc: '浏览全部技能列表',       page: 'skills' }
+      { icon: 'calendar', title: '日历',     desc: '查看与管理日程事件',     page: 'calendar' }
     ];
 
     const grid = UI.el('div', 'dashboard-entries');

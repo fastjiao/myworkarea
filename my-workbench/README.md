@@ -20,14 +20,7 @@
 - [ ] 缩小日历组件的整体尺寸（建议宽度缩减至当前的70-80%），保持日期网格比例协调
 - [x] 点击日历中任意日期，弹出事件创建/编辑面板。交互参考 Outlook日历：支持设置事件标题、时间、提醒、分类标签；支持日视图/周视图/月视图切换
 
-## 代办
-- [ ] 将原"代办"模块整体迁移至日历组件内，重命名为"Todo"。在日历日期格中显示当日Todo数量角标，点击日期可查看/编辑当日Todo列表
-## Find_skills
-- [x] 在界面里部署ai，让ai去网络上寻找skill
-    - [x] https://www.cocoloop.cn/
-    - [x] https://threeui.com/browse
-    - [x] https://www.zcool.com.cn/
-    - [x] https://www.reactbits.dev/get-started/index
+
 ## 音乐 
 - [x] 点击底部进度条左侧的歌曲名称可以显示歌词，具体模仿《网易云音乐》
     - [ ] 歌曲歌词只在“音乐”页面显示 切换其他页面时自动关闭
@@ -49,8 +42,15 @@
 - [ ] 音乐曲的字号改为20px
 
 
-
-
+### 取消的项目
+#### 代办
+- [ ] 将原"代办"模块整体迁移至日历组件内，重命名为"Todo"。在日历日期格中显示当日Todo数量角标，点击日期可查看/编辑当日Todo列表
+#### Find_skills
+- [x] 在界面里部署ai，让ai去网络上寻找skill
+    - [x] https://www.cocoloop.cn/
+    - [x] https://threeui.com/browse
+    - [x] https://www.zcool.com.cn/
+    - [x] https://www.reactbits.dev/get-started/index
 
 
 

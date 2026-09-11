@@ -1,7 +1,7 @@
 {
   "name": "jiao-workbench",
-  "version": "2.2.1",
-  "description": "教公台-阡稻工作室桌面客户端：软件快捷启动、文件/文件夹打开、日历与待办、技能查找、AI技能发现",
+  "version": "3.0.1",
+  "description": "教公台-阡稻工作室桌面客户端：软件快捷启动、文件/文件夹打开、日历与待办、一键签到、网易云音乐",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -12,18 +12,17 @@
     "appId": "com.jiaogongtai.workbench",
     "productName": "教公台-阡稻工作室",
     "directories": {
-      "output": "../jiao-release"
+      "output": "jiao-release"
     },
     "win": {
       "target": [
         {
-          "target": "portable",
+          "target": "dir",
           "arch": [
             "x64"
           ]
         }
-      ],
-      "artifactName": "${productName}-v${version}-portable.${ext}"
+      ]
     },
     "files": [
       "main.js",
@@ -56,9 +55,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "duckduckgo-websearch": "^2.0.3",
-    "NeteaseCloudMusicApi": "^4.32.0",
-    "openai": "^4.73.0"
+    "NeteaseCloudMusicApi": "^4.32.0"
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",

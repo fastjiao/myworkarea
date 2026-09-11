@@ -30,19 +30,20 @@ const DATA_DIR = app.isPackaged
   : path.join(__dirname, 'data');
 
 // 允许读写的数据文件白名单（防止渲染进程通过文件名参数访问任意文件）
-const ALLOWED_FILES = ['apps.json', 'events.json', 'skills.json', 'settings.json', 'sign-tasks.json', 'bg-run.json', 'netease-cookie.json'];
+const ALLOWED_FILES = ['apps.json', 'events.json', 'settings.json', 'sign-tasks.json', 'bg-run.json', 'netease-cookie.json', 'netease-data.json'];
 
 // 每个数据文件对应的默认值（文件不存在或损坏时使用）
 const DEFAULT_VALUES = {
   'apps.json': [],
   'events.json': [],
-  'skills.json': [],
   'settings.json': { theme: 'light' },
   'sign-tasks.json': [],
   // 「关闭后继续后台运行」独立文件（主进程持有，避免与渲染进程的 settings.json 互相覆盖）
   'bg-run.json': { enabled: false },
   // 网易云登录 cookie 持久化（扫码一次后下次免扫码）
-  'netease-cookie.json': { cookie: '' }
+  'netease-cookie.json': { cookie: '' },
+  // 网易云用户信息 + 播放列表本地缓存（实现已登录用户秒开，避免每次进页面都走扫码/网络请求）
+  'netease-data.json': {}
 };
 
 // ---------------------------------------------------------------------
@@ -593,6 +594,9 @@ ipcMain.handle('netease:fetch', async (event, { apiPath, query, cookie }) => {
 
 // 网易云 API 子进程引用（由 netease:start-api fork，应用退出时需清理）
 let neteaseApiProc = null;
+// 子进程就绪 Promise：fork 后立即创建，resolve 时表示已 listen（或失败/超时）。
+// 预热 fork 与 ipc handler 共享，避免「已 fork 但未 listen」竞态导致渲染进程拿到 ECONNREFUSED。
+let neteaseApiWhenReady = null;
 
 /**
  * 探测本地 API 端口是否已有服务在响应（复用已有实例，避免重复 fork）
@@ -601,7 +605,8 @@ let neteaseApiProc = null;
  */
 function checkApiAlive(port) {
   return new Promise((resolve) => {
-    const req = http.request({ hostname: '127.0.0.1', port, path: '/', method: 'GET', timeout: 1500 }, (res) => {
+    // 本地 127.0.0.1 响应很快，400ms 足够；缩短无服务时的空等
+    const req = http.request({ hostname: '127.0.0.1', port, path: '/', method: 'GET', timeout: 400 }, (res) => {
       res.resume();
       resolve(true);
     });
@@ -612,19 +617,12 @@ function checkApiAlive(port) {
 }
 
 /**
- * 自动启动 NeteaseCloudMusicApi 子进程（fork netease-api-host.js）
+ * fork 并等待网易云 API 子进程就绪（统一供预热与 ipc handler 调用）
+ * 同时设置 neteaseApiProc 与 neteaseApiWhenReady。
  * @returns {Promise<{running?: boolean, port?: number, failed?: boolean, reason?: string}>}
  */
-ipcMain.handle('netease:start-api', async () => {
-  // 已在运行：直接返回
-  if (neteaseApiProc && !neteaseApiProc.killed) {
-    return { running: true, port: NETEASE_API_PORT };
-  }
-  // 端口探测：若 3000 已有服务在响应（外部启动 / 上次残留），直接复用
-  if (await checkApiAlive(NETEASE_API_PORT)) {
-    return { running: true, port: NETEASE_API_PORT };
-  }
-  return new Promise((resolve) => {
+function spawnNeteaseApi() {
+  neteaseApiWhenReady = new Promise((resolve) => {
     const hostPath = path.join(__dirname, 'netease-api-host.js');
     let settled = false;
     const done = (r) => { if (!settled) { settled = true; resolve(r); } };
@@ -651,6 +649,29 @@ ipcMain.handle('netease:start-api', async () => {
     // 启动超时兜底
     setTimeout(() => done({ failed: true, reason: 'API 服务启动超时' }), 15000);
   });
+  return neteaseApiWhenReady;
+}
+
+/**
+ * 自动启动 NeteaseCloudMusicApi 子进程（fork netease-api-host.js）
+ * @returns {Promise<{running?: boolean, port?: number, failed?: boolean, reason?: string}>}
+ */
+ipcMain.handle('netease:start-api', async () => {
+  // 已有进程：等待其就绪结果（已就绪则立即返回，spawning 中则等待，避免竞态）
+  if (neteaseApiProc && !neteaseApiProc.killed && neteaseApiWhenReady) {
+    const result = await neteaseApiWhenReady;
+    // 失败且进程已退出：重试一次
+    if (result.failed && (!neteaseApiProc || neteaseApiProc.killed)) {
+      return spawnNeteaseApi();
+    }
+    return result;
+  }
+  // 端口探测：若 3000 已有服务在响应（外部启动 / 上次残留），直接复用
+  if (await checkApiAlive(NETEASE_API_PORT)) {
+    neteaseApiWhenReady = Promise.resolve({ running: true, port: NETEASE_API_PORT });
+    return { running: true, port: NETEASE_API_PORT };
+  }
+  return spawnNeteaseApi();
 });
 
 /**
@@ -848,205 +869,6 @@ ipcMain.handle('settings:set-background', async (event, enabled) => {
     return { success: false, message: err.message, value: backgroundRun };
   }
 });
-
-// ---------------------------------------------------------------------
-// AI 技能发现器 —— 抓取固定网站 + AI 分析
-// 数据源：https://www.cocoloop.cn/、https://threeui.com/browse、
-//         https://www.zcool.com.cn/、https://www.reactbits.dev/get-started/index
-// ---------------------------------------------------------------------
-
-// 固定数据源列表
-const SOURCE_URLS = [
-  { url: 'https://www.cocoloop.cn/', name: 'Cocoloop' },
-  { url: 'https://threeui.com/browse', name: 'Three UI' },
-  { url: 'https://www.zcool.com.cn/', name: '站酷 (Zcool)' },
-  { url: 'https://www.reactbits.dev/get-started/index', name: 'React Bits' },
-  { url: 'https://github.com/', name: 'GitHub' }
-];
-
-let WebFetcher;
-async function getWebFetcher() {
-  if (!WebFetcher) {
-    const mod = await (async () => {
-      try {
-        return require('duckduckgo-websearch');
-      } catch {
-        return import('duckduckgo-websearch');
-      }
-    })();
-    WebFetcher = mod.WebFetcher || mod.default?.WebFetcher;
-  }
-  return WebFetcher;
-}
-
-/**
- * 调用 OpenAI 兼容 API 进行 AI 分析
- * 将抓取到的网页内容发送给 AI，让 AI 提取出有价值的技能
- */
-async function analyzeWithAI(pageContents, tags, apiConfig) {
-  const { apiKey, apiEndpoint, model } = apiConfig;
-  if (!apiKey) return null;
-
-  const { default: OpenAI } = require('openai');
-  const openai = new OpenAI({
-    apiKey,
-    baseURL: apiEndpoint || undefined
-  });
-
-  // 构建网页内容文本（截取前 3000 字符/每页，避免 token 超限）
-  const contentBlock = pageContents.map((p, i) =>
-    `【来源 ${i + 1}】${p.name} (${p.url})\n内容摘要：${p.content.substring(0, 3000)}`
-  ).join('\n\n---\n\n');
-
-  const prompt = `你是一个资深技术猎头。请从以下网页内容中，提取出与用户关注领域相关的、有价值的"硬技能"。
-
-用户关注领域：${tags.join('、')}
-
-要求：
-1. 只提取实操性强的技能（新兴工具、框架、库、方法论等），忽略纯新闻或广告
-2. 每个技能需包含：
-   - name: 技能名称（中文）
-   - category: 分类（必须从以下选择: 开发, 设计, 产品, 数据）
-   - description: 一句话描述（中文，20字以内）
-   - level: 推荐熟练度（精通/熟练/熟悉/了解）
-   - source_url: 来源链接（从下方网页内容中选取最相关的链接）
-   - reason: AI 推荐理由（中文，30字以内，说明为什么值得学）
-3. 返回 JSON 数组格式，不要包含任何其他文字
-
-网页内容：
-${contentBlock}`;
-
-  const response = await openai.chat.completions.create({
-    model: model || 'gpt-4o-mini',
-    messages: [
-      { role: 'system', content: '你是一个技术猎头，只返回 JSON 数组，不包含任何其他文字。' },
-      { role: 'user', content: prompt }
-    ],
-    temperature: 0.3,
-    response_format: { type: 'json_object' }
-  });
-
-  const content = response.choices[0]?.message?.content;
-  if (!content) return null;
-
-  try {
-    const parsed = JSON.parse(content);
-    return parsed.skills || parsed.data || parsed.results || parsed;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * 处理技能搜索请求
- * 1. 抓取固定网站的页面内容
- * 2. 用 AI 分析提取技能
- * 3. 返回结构化数据
- */
-ipcMain.handle('skill-finder:search', async (event, { tags, apiConfig }) => {
-  try {
-    if (!tags || !Array.isArray(tags) || tags.length === 0) {
-      return { success: false, message: '请至少输入一个标签' };
-    }
-
-    // 1. 获取 WebFetcher 实例
-    const Fetcher = await getWebFetcher();
-    if (!Fetcher) {
-      return { success: false, message: '页面抓取模块加载失败' };
-    }
-    const fetcher = new Fetcher();
-
-    // 2. 遍历抓取每个固定网站的内容
-    const pageContents = [];
-    const errors = [];
-
-    for (const source of SOURCE_URLS) {
-      try {
-        const content = await fetcher.fetchAndParse(source.url, 5000);
-        if (content && content.trim().length > 50) {
-          pageContents.push({
-            url: source.url,
-            name: source.name,
-            content: content.trim()
-          });
-        }
-      } catch (e) {
-        errors.push(`${source.name}: ${e.message}`);
-        console.error('抓取失败:', source.url, e.message);
-      }
-    }
-
-    if (pageContents.length === 0) {
-      const errorDetail = errors.length > 0
-        ? '全部网站抓取失败：' + errors.join('；')
-        : '未能从数据源获取到有效内容';
-      return { success: false, message: errorDetail };
-    }
-
-    // 3. AI 分析
-    let skills = [];
-    if (apiConfig && apiConfig.apiKey) {
-      try {
-        const aiResult = await analyzeWithAI(pageContents, tags, apiConfig);
-        if (Array.isArray(aiResult) && aiResult.length > 0) {
-          skills = aiResult;
-        }
-      } catch (e) {
-        console.error('AI 分析失败:', e.message);
-      }
-    }
-
-    // 4. AI 不可用时，退回基础处理（按来源分割段落作为技能条目）
-    if (skills.length === 0) {
-      for (const page of pageContents) {
-        const segments = page.content.split(/\n{2,}/).filter(s => s.trim().length > 20);
-        const chunks = segments.slice(0, 3);
-        chunks.forEach((chunk) => {
-          const firstLine = chunk.replace(/[#*【】\n]/g, '').trim().substring(0, 40);
-          skills.push({
-            name: firstLine || page.name,
-            category: '开发',
-            description: chunk.replace(/[#*【】\n]/g, '').trim().substring(0, 50) + '…',
-            level: '熟悉',
-            source_url: page.url,
-            reason: '来自 ' + page.name
-          });
-        });
-      }
-    }
-
-    return {
-      success: true,
-      data: skills,
-      sources: SOURCE_URLS.map(s => s.url),
-      fetchErrors: errors.length > 0 ? errors : undefined
-    };
-  } catch (err) {
-    console.error('技能搜索失败:', err);
-    return { success: false, message: '搜索失败：' + err.message };
-  }
-});
-
-/**
- * 根据标签猜测分类
- */
-function guessCategory(tags) {
-  const categoryMap = {
-    '开发': ['前端', '后端', '开发', 'JavaScript', 'TypeScript', 'React', 'Vue', 'Node', 'Python', 'Java', 'Go', 'Rust', 'CSS', 'HTML', 'Electron', 'Tauri', '编程', '代码', '框架', '工程化'],
-    '设计': ['设计', 'UI', 'UX', '界面', '视觉', '交互', 'Figma', 'Sketch', '原型', '配色', '排版', '动效', '插画', '品牌'],
-    '产品': ['产品', 'PM', '需求', '用户', '市场', '运营', '增长', '策略', '规划', '商业', '项目', '管理'],
-    '数据': ['数据', '分析', 'SQL', 'Python', 'AI', '机器学习', '深度学习', '大数据', '统计', '可视化', '算法']
-  };
-
-  for (const tag of tags) {
-    for (const [cat, keywords] of Object.entries(categoryMap)) {
-      if (keywords.some(k => tag.toLowerCase().includes(k.toLowerCase()))) {
-        return cat;
-      }
-    }
-  }
-  return '开发';
-}
 
 // ---------------------------------------------------------------------
 // 一键签到 IPC
@@ -1933,14 +1755,13 @@ app.whenReady().then(() => {
   createTray();
 
   // 预热网易云 API：窗口创建后立即后台启动，用户切到网易云页面时已就绪
+  // 使用 spawnNeteaseApi 统一入口，neteaseApiWhenReady 记录就绪 Promise，
+  // ipc handler 会 await 它，避免「已 fork 但未 listen」竞态
   checkApiAlive(NETEASE_API_PORT).then((alive) => {
-    if (!alive && (!neteaseApiProc || neteaseApiProc.killed)) {
-      const hostPath = path.join(__dirname, 'netease-api-host.js');
-      try {
-        const proc = fork(hostPath, [], { silent: true });
-        neteaseApiProc = proc;
-        proc.on('exit', () => { if (neteaseApiProc === proc) neteaseApiProc = null; });
-      } catch (e) { /* 预热失败静默，用户切到网易云页面时会重试 */ }
+    if (alive) {
+      neteaseApiWhenReady = Promise.resolve({ running: true, port: NETEASE_API_PORT });
+    } else if (!neteaseApiProc || neteaseApiProc.killed) {
+      spawnNeteaseApi();
     }
   });
 

@@ -106,15 +106,6 @@ contextBridge.exposeInMainWorld('workbench', {
    */
   writeData: (filename, data) => ipcRenderer.invoke('data:write', filename, data),
 
-  // ======================== AI 技能发现器 ========================
-
-  /**
-   * 搜索技能
-   * @param {{tags: string[], apiConfig: {apiKey?: string, apiEndpoint?: string, model?: string}}} params
-   * @returns {Promise<{success: boolean, data?: Array, message?: string}>}
-   */
-  searchSkills: (params) => ipcRenderer.invoke('skill-finder:search', params),
-
   // ======================== 一键签到 ========================
 
   /**

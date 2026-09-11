@@ -58,8 +58,6 @@ const Store = {
   apps: [],
   // 日历事件 / 待办（统一为事件模型，含 done 字段表示完成态）
   events: [],
-  // 技能列表
-  skills: [],
   // 应用设置（主题偏好等）
   settings: { theme: 'light' },
 
@@ -80,7 +78,6 @@ const Store = {
   async load() {
     this.apps = (await window.workbench.readData('apps.json')) || [];
     this.events = (await window.workbench.readData('events.json')) || [];
-    this.skills = (await window.workbench.readData('skills.json')) || [];
     this.settings = (await window.workbench.readData('settings.json')) || { theme: 'light' };
   },
 
@@ -92,11 +89,6 @@ const Store = {
   /** 保存事件 / 待办数据 */
   async saveEvents() {
     return window.workbench.writeData('events.json', this.events);
-  },
-
-  /** 保存技能数据 */
-  async saveSkills() {
-    return window.workbench.writeData('skills.json', this.skills);
   },
 
   /** 保存设置数据 */
@@ -289,7 +281,7 @@ const PAGE_MODULES = {};
 
 /**
  * 切换到指定页面：更新导航高亮、显示对应 section、刷新该模块内容
- * @param {string} pageName 页面名（home / calendar / skills）
+ * @param {string} pageName 页面名（home / calendar / sign / netease）
  */
 function switchPage(pageName) {
   document.querySelectorAll('.nav-item').forEach((btn) => {
@@ -461,8 +453,6 @@ async function init() {
   PAGE_MODULES.dashboard = window.Dashboard;
   PAGE_MODULES.home = window.Home;
   PAGE_MODULES.calendar = window.Calendar;
-  PAGE_MODULES.skills = window.Skills;
-  PAGE_MODULES['skill-finder'] = window.SkillFinder;
   PAGE_MODULES.sign = window.Sign;
   PAGE_MODULES.netease = window.Netease;
 
@@ -515,7 +505,7 @@ async function init() {
   });
 
   // 9. 初始化各功能模块
-  [window.Dashboard, window.Home, window.Calendar, window.Skills, window.SkillFinder, window.Sign, window.Netease].forEach((mod) => {
+  [window.Dashboard, window.Home, window.Calendar, window.Sign, window.Netease].forEach((mod) => {
     if (mod && typeof mod.init === 'function') mod.init();
   });
 
