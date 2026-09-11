@@ -169,6 +169,31 @@ contextBridge.exposeInMainWorld('workbench', {
    */
   getPsTemplates: () => ipcRenderer.invoke('sign:ps-templates'),
 
+  // ======================== 抖音 / 千问外部窗口 ========================
+
+  /** 打开抖音独立全屏窗口（加载 douyin.com） */
+  openDouyin: () => ipcRenderer.invoke('open-douyin'),
+
+  /** 打开通义千问独立窗口（加载 chat.qwen.ai，桌面 UA） */
+  openQwen: () => ipcRenderer.invoke('open-qwen'),
+
+  // ======================== 抖音续火花（后台自动化） ========================
+
+  /** 手动触发一次续火花 */
+  fireSparkRun: () => ipcRenderer.invoke('fire-spark:run'),
+  /** 显示隐藏的续火花窗口（首次手动登录抖音，cookie 持久化到 persist:fire-session） */
+  fireSparkShowLogin: () => ipcRenderer.invoke('fire-spark:show-login'),
+  /** 隐藏续火花窗口 */
+  fireSparkHideLogin: () => ipcRenderer.invoke('fire-spark:hide-login'),
+  /** 读取续火花配置 */
+  fireSparkGetConfig: () => ipcRenderer.invoke('fire-spark:get-config'),
+  /** 保存续火花配置 */
+  fireSparkSaveConfig: (config) => ipcRenderer.invoke('fire-spark:save-config', config),
+  /** 读取文案库 */
+  fireSparkGetMessages: () => ipcRenderer.invoke('fire-spark:get-messages'),
+  /** 保存文案库 */
+  fireSparkSaveMessages: (messages) => ipcRenderer.invoke('fire-spark:save-messages', messages),
+
   // ======================== 坐标拾取器（桌面签到辅助） ========================
 
   /**

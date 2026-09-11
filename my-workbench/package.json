@@ -29,6 +29,7 @@
       "preload.js",
       "renderer.js",
       "netease-api-host.js",
+      "block-external-protocol-preload.js",
       "index.html",
       "styles.css",
       "modules/**/*",
@@ -55,7 +56,8 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "NeteaseCloudMusicApi": "^4.32.0"
+    "NeteaseCloudMusicApi": "^4.32.0",
+    "node-schedule": "^2.1.1"
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",

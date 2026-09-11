@@ -16,6 +16,14 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 
+// node-schedule：每日定时续火花（可选依赖，未安装时降级为仅手动触发）
+let schedule;
+try {
+  schedule = require('node-schedule');
+} catch (e) {
+  console.warn('[续火花] node-schedule 未安装，定时任务不可用，仅支持手动触发。请运行: npm install node-schedule');
+}
+
 // ---------------------------------------------------------------------
 // 常量定义
 // ---------------------------------------------------------------------
@@ -30,7 +38,7 @@ const DATA_DIR = app.isPackaged
   : path.join(__dirname, 'data');
 
 // 允许读写的数据文件白名单（防止渲染进程通过文件名参数访问任意文件）
-const ALLOWED_FILES = ['apps.json', 'events.json', 'settings.json', 'sign-tasks.json', 'bg-run.json', 'netease-cookie.json', 'netease-data.json'];
+const ALLOWED_FILES = ['apps.json', 'events.json', 'settings.json', 'sign-tasks.json', 'bg-run.json', 'netease-cookie.json', 'netease-data.json', 'fire-spark-config.json', 'fire-spark-messages.json'];
 
 // 每个数据文件对应的默认值（文件不存在或损坏时使用）
 const DEFAULT_VALUES = {
@@ -43,7 +51,30 @@ const DEFAULT_VALUES = {
   // 网易云登录 cookie 持久化（扫码一次后下次免扫码）
   'netease-cookie.json': { cookie: '' },
   // 网易云用户信息 + 播放列表本地缓存（实现已登录用户秒开，避免每次进页面都走扫码/网络请求）
-  'netease-data.json': {}
+  'netease-data.json': {},
+  // 抖音续火花配置（目标好友、DOM 选择器占位、定时时间）—— 选择器需手动填入实测值
+  'fire-spark-config.json': {
+    enabled: true,                    // 是否启用定时续火花
+    targetFriend: '',                 // TODO: 填入要续火花的好友昵称
+    scheduleTime: '00 01 * * *',      // node-schedule cron 表达式：每天 00:01
+    chatUrl: 'https://www.douyin.com/', // 续火花加载的页面（私信/创作者平台）
+    selectors: {
+      // TODO: 以下选择器均为占位，需根据抖音网页版实际 DOM 填入后才能运行
+      chatEntry: '',                  // 进入私信/聊天入口的选择器
+      friendItem: '',                 // 定位目标好友会话的选择器
+      inputBox: '',                   // 消息输入框选择器
+      sendBtn: ''                     // 发送按钮选择器
+    }
+  },
+  // 续火花随机文案库（内置默认，可在设置里追加自定义文案）
+  'fire-spark-messages.json': [
+    '在吗在吗',
+    '今天也要加油哦',
+    '冒个泡~',
+    '续个火花',
+    '滴滴滴',
+    '记得想我'
+  ]
 };
 
 // ---------------------------------------------------------------------
@@ -363,6 +394,325 @@ function createWindow() {
   mainWindow = win;
   win.loadFile('index.html');
 }
+
+// ---------------------------------------------------------------------
+// 抖音 / 千问 / 续火花 窗口与后台自动化
+// ---------------------------------------------------------------------
+
+// 抖音主窗口、千问窗口、续火花隐藏窗口引用
+let douyinWindow = null;
+let qwenWindow = null;
+let fireSparkWindow = null;
+// 续火花定时任务句柄
+let fireSparkJob = null;
+// 续火花独立 session（persist:fire-session，cookie 持久化隔离登录态）
+let fireSparkSession = null;
+
+/**
+ * 获取续火花专用 session（独立 partition 持久化 cookie/localStorage）
+ * 与主窗口、签到窗口的 session 完全隔离，互不影响
+ */
+function getFireSparkSession() {
+  if (!fireSparkSession) {
+    fireSparkSession = session.fromPartition('persist:fire-session', { cache: true });
+    fireSparkSession.setPermissionRequestHandler((wc, permission, callback) => {
+      const allowed = ['storage', 'cookie', 'webStorage', 'media'].includes(permission);
+      callback(allowed);
+    });
+  }
+  return fireSparkSession;
+}
+
+/**
+ * 拦截非标准协议链接（如 bytedance://），阻止系统弹出"找不到应用"对话框
+ * 抖音登录/滑动时会尝试唤起 PC 客户端（bytedance:// 协议），未装客户端时系统弹窗打扰用户
+ * 主进程的 will-navigate 等事件对外部协议可能不触发（外部协议不走导航流程，直接交给系统），
+ * 因此在渲染层注入 JS 直接拦截 <a> 点击 / window.open / location 赋值，在 Chromium 处理前阻止
+ * @param {BrowserWindow} win
+ */
+
+// 记录需要拦截外部协议唤起的 webContents ID，供 session permission handler 精确匹配
+const blockedWcIds = new Set();
+
+function blockExternalProtocols(win) {
+  const wc = win.webContents;
+  blockedWcIds.add(wc.id);
+  wc.on('destroyed', () => blockedWcIds.delete(wc.id));
+  // 允许的标准协议白名单
+  const allowed = ['http:', 'https:', 'file:', 'data:', 'about:', 'blob:', 'chrome-extension:'];
+  const isExternal = (url) => {
+    try {
+      const u = new URL(url);
+      return !allowed.includes(u.protocol);
+    } catch (e) {
+      return false;
+    }
+  };
+  // 兜底：主进程事件拦截（部分场景外部协议可能走导航流程）
+  wc.on('will-navigate', (e, url) => {
+    if (isExternal(url)) { console.log('[拦截外部协议] will-navigate:', url); e.preventDefault(); }
+  });
+  wc.on('will-redirect', (e, url) => {
+    if (isExternal(url)) { console.log('[拦截外部协议] will-redirect:', url); e.preventDefault(); }
+  });
+  wc.on('will-frame-navigate', (e, details) => {
+    const url = (details && details.url) || '';
+    if (isExternal(url)) { console.log('[拦截外部协议] will-frame-navigate:', url); e.preventDefault(); }
+  });
+  wc.setWindowOpenHandler((details) => {
+    if (isExternal(details.url)) {
+      console.log('[拦截外部协议] window.open:', details.url);
+      return { action: 'deny' };
+    }
+    return { action: 'allow' };
+  });
+  // 核心：session 级 permission handler 拦截 openExternal 权限。
+  // 外部协议（bytedance:// 等）不走导航流程，Chromium 直接请求 openExternal 权限并弹
+  // "是否打开此链接"确认框。在此静默拒绝（callback(false)），确认框不再出现。
+  const ses = wc.session;
+  ses.setPermissionRequestHandler((requestWc, permission, callback) => {
+    if (permission === 'openExternal' && blockedWcIds.has(requestWc.id)) {
+      return callback(false);
+    }
+    if (ses === fireSparkSession) {
+      return callback(['storage', 'cookie', 'webStorage', 'media'].includes(permission));
+    }
+    callback(true);
+  });
+  ses.setPermissionCheckHandler((requestWc, permission) => {
+    if (permission === 'openExternal' && blockedWcIds.has(requestWc.id)) {
+      return false;
+    }
+    return true;
+  });
+  // 渲染层拦截由 preload（block-external-protocol-preload.js）在页面脚本前注入，
+  // 覆盖 <a> 点击 / window.open / location / 动态 iframe，此处主进程事件仅作兜底
+}
+
+/**
+ * 打开抖音独立全屏窗口（浏览抖音网页版，支持手动刷视频/看直播/聊天）
+ * 复用已有窗口，避免重复打开
+ */
+function createDouyinWindow() {
+  if (douyinWindow && !douyinWindow.isDestroyed()) {
+    douyinWindow.show();
+    douyinWindow.focus();
+    return;
+  }
+  const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+  douyinWindow = new BrowserWindow({
+    width,
+    height,
+    title: '抖音',
+    backgroundColor: '#000000',
+    webPreferences: {
+      preload: path.join(__dirname, 'block-external-protocol-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+  blockExternalProtocols(douyinWindow);
+  douyinWindow.loadURL('https://www.douyin.com/');
+  douyinWindow.on('closed', () => { douyinWindow = null; });
+}
+
+/**
+ * 打开通义千问独立窗口（网页嵌套模式，桌面 UA 保证网页版功能正常）
+ * 使用独立 partition 持久化千问登录态
+ */
+function createQwenWindow() {
+  if (qwenWindow && !qwenWindow.isDestroyed()) {
+    qwenWindow.show();
+    qwenWindow.focus();
+    return;
+  }
+  const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+  qwenWindow = new BrowserWindow({
+    width: Math.min(width, 1280),
+    height: Math.min(height, 860),
+    title: '通义千问',
+    backgroundColor: '#ffffff',
+    webPreferences: {
+      preload: path.join(__dirname, 'block-external-protocol-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      partition: 'persist:qwen-session'
+    }
+  });
+  // 设置常见桌面浏览器 UA，避免千问网页版识别为异常环境
+  qwenWindow.webContents.setUserAgent(
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  );
+  blockExternalProtocols(qwenWindow);
+  qwenWindow.loadURL('https://chat.qwen.ai/');
+  qwenWindow.on('closed', () => { qwenWindow = null; });
+}
+
+/**
+ * 创建（或复用）续火花隐藏窗口
+ * show: false + skipTaskbar: true，后台静默运行，绝不抢焦点/触发鼠标移动
+ */
+function getOrCreateFireSparkWindow() {
+  if (fireSparkWindow && !fireSparkWindow.isDestroyed()) return fireSparkWindow;
+  fireSparkWindow = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    show: false,            // 隐藏窗口，后台自动化
+    skipTaskbar: true,      // 任务栏不显示
+    autoHideMenuBar: true,
+    title: '续火花',
+    webPreferences: {
+      session: getFireSparkSession(),  // 独立持久化 session
+      preload: path.join(__dirname, 'block-external-protocol-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+  blockExternalProtocols(fireSparkWindow);
+  fireSparkWindow.on('closed', () => { fireSparkWindow = null; });
+  return fireSparkWindow;
+}
+
+/**
+ * 执行一次续火花自动化（在隐藏窗口中静默完成）
+ * 流程：加载页面 -> 定位好友 -> 输入随机文案 -> 点击发送
+ * 🔴 DOM 选择器为占位，需在 data/fire-spark-config.json 填入实测选择器后才能生效
+ * @returns {Promise<{success: boolean, message: string}>}
+ */
+async function runFireSpark() {
+  const config = readData('fire-spark-config.json');
+  if (!config || !config.targetFriend) {
+    return { success: false, message: '未配置目标好友，请在设置中填写要续火花的好友昵称' };
+  }
+  const messages = readData('fire-spark-messages.json');
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return { success: false, message: '文案库为空，请先添加续火花文案' };
+  }
+
+  const win = getOrCreateFireSparkWindow();
+  try {
+    // 1. 加载续火花页面（私信/创作者平台）
+    await win.loadURL(config.chatUrl || 'https://www.douyin.com/');
+    // 等待页面加载（TODO：实际需根据网络情况调整等待策略/监听 did-finish-load）
+    await new Promise((r) => setTimeout(r, 5000));
+
+    const selectors = config.selectors || {};
+    // 随机抽取一条文案（防止被判定为机器人）
+    const randomMsg = messages[Math.floor(Math.random() * messages.length)];
+
+    // 2. 在隐藏窗口中执行自动化脚本（executeJavaScript，不触发鼠标移动、不抢焦点）
+    //    🔴 以下选择器均为占位，需填入抖音网页版实测 DOM 选择器
+    const result = await win.webContents.executeJavaScript(`
+      (async () => {
+        const sel = ${JSON.stringify(selectors)};
+        const friend = ${JSON.stringify(config.targetFriend)};
+        const msg = ${JSON.stringify(randomMsg)};
+        // TODO: 定位聊天入口并点击（选择器：sel.chatEntry）
+        // TODO: 定位目标好友会话并点击（选择器：sel.friendItem，匹配文字 friend）
+        // TODO: 在输入框填入随机文案（选择器：sel.inputBox）
+        // TODO: 点击发送按钮（选择器：sel.sendBtn）
+        // 占位返回：选择器未配置时提示用户补全
+        if (!sel.chatEntry || !sel.inputBox || !sel.sendBtn) {
+          return { ok: false, reason: 'DOM 选择器未配置，请在设置中填入实测选择器' };
+        }
+        return { ok: true, sent: msg, friend: friend };
+      })();
+    `);
+
+    if (result && result.ok) {
+      return { success: true, message: '已发送「' + result.sent + '」给 ' + result.friend };
+    }
+    return { success: false, message: (result && result.reason) || '续火花执行失败' };
+  } catch (err) {
+    return { success: false, message: '续火花异常：' + err.message };
+  }
+}
+
+/**
+ * 启动续火花每日定时任务（node-schedule cron）
+ * 配置读取自 data/fire-spark-config.json 的 scheduleTime（默认每天 00:01）
+ * 配置变更或应用启动时调用
+ */
+function scheduleFireSpark() {
+  if (!schedule) {
+    console.warn('[续火花] node-schedule 未安装，定时任务未启动');
+    return;
+  }
+  // 取消已有任务
+  if (fireSparkJob) {
+    fireSparkJob.cancel();
+    fireSparkJob = null;
+  }
+  const config = readData('fire-spark-config.json');
+  if (!config || !config.enabled) return;
+  const cron = config.scheduleTime || '00 01 * * *';
+  try {
+    fireSparkJob = schedule.scheduleJob(cron, async () => {
+      console.log('[续火花] 定时任务触发', new Date().toLocaleString());
+      const r = await runFireSpark();
+      console.log('[续火花] 结果：', r.message);
+    });
+    console.log('[续火花] 定时任务已启动，cron =', cron);
+  } catch (e) {
+    console.error('[续火花] 定时任务启动失败：', e.message);
+  }
+}
+
+// ---------------------------------------------------------------------
+// 抖音 / 千问 / 续火花 IPC 通信
+// ---------------------------------------------------------------------
+
+// 打开抖音独立全屏窗口
+ipcMain.handle('open-douyin', () => {
+  createDouyinWindow();
+  return { success: true };
+});
+
+// 打开通义千问独立窗口
+ipcMain.handle('open-qwen', () => {
+  createQwenWindow();
+  return { success: true };
+});
+
+// 手动触发一次续火花
+ipcMain.handle('fire-spark:run', async () => runFireSpark());
+
+// 显示续火花隐藏窗口（首次手动登录抖音，cookie 持久化到 persist:fire-session）
+ipcMain.handle('fire-spark:show-login', async () => {
+  const win = getOrCreateFireSparkWindow();
+  const config = readData('fire-spark-config.json');
+  await win.loadURL(config.chatUrl || 'https://www.douyin.com/');
+  win.show();
+  win.focus();
+  return { success: true };
+});
+
+// 隐藏续火花窗口
+ipcMain.handle('fire-spark:hide-login', async () => {
+  if (fireSparkWindow && !fireSparkWindow.isDestroyed()) {
+    fireSparkWindow.hide();
+  }
+  return { success: true };
+});
+
+// 读取续火花配置
+ipcMain.handle('fire-spark:get-config', async () => readData('fire-spark-config.json'));
+
+// 保存续火花配置（保存后重启定时任务使新配置生效）
+ipcMain.handle('fire-spark:save-config', async (event, config) => {
+  writeData('fire-spark-config.json', config);
+  scheduleFireSpark();
+  return { success: true };
+});
+
+// 读取文案库
+ipcMain.handle('fire-spark:get-messages', async () => readData('fire-spark-messages.json'));
+
+// 保存文案库
+ipcMain.handle('fire-spark:save-messages', async (event, messages) => {
+  writeData('fire-spark-messages.json', messages);
+  return { success: true };
+});
 
 // ---------------------------------------------------------------------
 // IPC 通信处理
@@ -1745,7 +2095,53 @@ function buildChineseMenu() {
   return Menu.buildFromTemplate(template);
 }
 
+// ---------------------------------------------------------------------
+// 单实例锁 + 外部协议拦截（bytedance:// 等）
+// 抖音网页触发 bytedance:// 唤起 PC 客户端时，Windows 没有直接拦截外部协议的事件，
+// 官方推荐方式：把协议注册给本应用，触发时由 second-instance 接收并静默忽略，
+// Chromium 见有处理程序就不再弹"没有应用可打开此链接"提示
+// ---------------------------------------------------------------------
+
+// 需要静默拦截的外部协议列表
+const BLOCKED_PROTOCOLS = ['bytedance', 'snssdk', 'aweme'];
+
+// 单实例锁：确保只运行一个实例，bytedance:// 触发时走 second-instance 而非新窗口
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  // 第二实例启动时（bytedance:// 触发），检查命令行参数，静默忽略外部协议调用
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+    const hasBlocked = commandLine.some((arg) =>
+      BLOCKED_PROTOCOLS.some((p) => arg.startsWith(p + '://'))
+    );
+    if (hasBlocked) return; // 静默忽略，不开新窗口
+    showMainWindow();       // 非协议调用（双击图标），聚焦主窗口
+  });
+}
+
 app.whenReady().then(() => {
+  // 注册外部协议给本应用，使 bytedance:// 等不再弹"没有应用"提示
+  // 注意：开发模式下 process.execPath 是 electron.exe，若不传 args，协议触发时
+  // electron.exe 会把协议 URL 当作应用路径加载 → "Error launching app"。
+  // 必须传 [__dirname] 让命令变为 electron.exe <appDir> <protocol-url>，
+  // electron.exe 先加载 appDir，协议 URL 走 second-instance 静默忽略。
+  // 打包后 process.execPath 是应用 exe，直接注册即可。
+  if (!app.isPackaged) {
+    // 清理旧版本（无 args）残留的注册表项，避免协议触发时仍走旧的错误命令
+    BLOCKED_PROTOCOLS.forEach((p) => {
+      try { app.removeAsDefaultProtocolClient(p); } catch (e) {}
+    });
+  }
+  BLOCKED_PROTOCOLS.forEach((p) => {
+    try {
+      if (app.isPackaged) {
+        app.setAsDefaultProtocolClient(p);
+      } else {
+        app.setAsDefaultProtocolClient(p, process.execPath, [path.join(__dirname)]);
+      }
+    } catch (e) { console.warn('注册协议失败:', p, e.message); }
+  });
   initDataDir();
   // 读取「关闭后继续后台运行」持久化状态
   const bgConf = readData('bg-run.json');
@@ -1753,6 +2149,9 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(buildChineseMenu());
   createWindow();
   createTray();
+
+  // 启动抖音续火花每日定时任务（node-schedule，配置见 data/fire-spark-config.json）
+  scheduleFireSpark();
 
   // 预热网易云 API：窗口创建后立即后台启动，用户切到网易云页面时已就绪
   // 使用 spawnNeteaseApi 统一入口，neteaseApiWhenReady 记录就绪 Promise，
@@ -1776,10 +2175,26 @@ app.whenReady().then(() => {
 // 真正退出前放行 close 拦截（托盘退出 / 菜单退出 / 系统退出都会触发）
 app.on('before-quit', () => {
   quitting = true;
+  // 清理注册的外部协议（避免注册表残留）
+  // 注册时传了 args，清理时也必须传相同 args 才能匹配注册表项
+  BLOCKED_PROTOCOLS.forEach((p) => {
+    try {
+      if (app.isPackaged) {
+        app.removeAsDefaultProtocolClient(p);
+      } else {
+        app.removeAsDefaultProtocolClient(p, process.execPath, [path.join(__dirname)]);
+      }
+    } catch (e) {}
+  });
   // 清理网易云 API 子进程
   if (neteaseApiProc && !neteaseApiProc.killed) {
     neteaseApiProc.kill();
     neteaseApiProc = null;
+  }
+  // 清理续火花定时任务
+  if (fireSparkJob) {
+    fireSparkJob.cancel();
+    fireSparkJob = null;
   }
 });
 

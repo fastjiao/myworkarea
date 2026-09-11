@@ -191,16 +191,61 @@ body {
   display: flex;
   flex-direction: column;
   padding: 20px 0;
+  /* 收起/展开时宽度平滑过渡，主内容区 flex:1 自动跟随扩大 */
+  transition: width 0.2s ease;
 }
 
 .sidebar-brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 18px;
   font-weight: 700;
   color: #ffffff;
-  padding: 0 20px 24px;
+  padding: 0 16px 24px;
   white-space: nowrap;
   /* 品牌发光：科技浅蓝光晕 */
   text-shadow: 0 0 18px rgba(169, 194, 255, 0.65);
+}
+
+/* 品牌文字：超长时省略号截断，收起时由 .sidebar.collapsed 隐藏 */
+.sidebar-brand-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 侧边栏收起/展开按钮（t.md 两个 svg 图标切换） */
+.sidebar-toggle {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #ffffff;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.sidebar-toggle:hover {
+  background: rgba(169, 194, 255, 0.18);
+  opacity: 1;
+}
+
+.sidebar-toggle-icon {
+  display: inline-flex;
+  line-height: 0;
+}
+
+/* 展开图标默认隐藏，仅收起后显示 */
+.sidebar-toggle-icon.expand-only {
+  display: none;
 }
 
 .sidebar-nav {
@@ -1446,6 +1491,52 @@ body {
 }
 
 /* ---------------------------------------------------------------------
+   侧边栏手动收起状态（.sidebar.collapsed）
+   收起后宽度收窄、仅留图标，主内容区 .main-area 因 flex:1 自动扩大
+   --------------------------------------------------------------------- */
+.sidebar.collapsed {
+  width: 64px;
+}
+
+.sidebar.collapsed .sidebar-brand {
+  padding: 0 0 20px;
+  justify-content: center;
+}
+
+.sidebar.collapsed .sidebar-brand-text {
+  display: none;
+}
+
+/* 收起后：隐藏「收起图标」，显示「展开图标」 */
+.sidebar.collapsed .sidebar-toggle-icon:not(.expand-only) {
+  display: none;
+}
+
+.sidebar.collapsed .sidebar-toggle-icon.expand-only {
+  display: inline-flex;
+}
+
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  padding: 11px 0;
+}
+
+.sidebar.collapsed .nav-label {
+  display: none;
+}
+
+/* 收起后主题按钮只留缩写，与窄屏响应式保持一致 */
+.sidebar.collapsed .theme-toggle {
+  font-size: 0;
+  text-align: center;
+}
+
+.sidebar.collapsed .theme-toggle::before {
+  content: "明暗";
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------------------
    响应式：窗口较窄时折叠侧边栏（只留图标）
    --------------------------------------------------------------------- */
 @media (max-width: 960px) {
@@ -1949,6 +2040,90 @@ body {
   .toggle-slider::before {
     transition: none;
   }
+}
+
+/* =====================================================================
+   续火花配置表单：分隔标题 + 输入框 + 文本域 + 操作按钮
+   ===================================================================== */
+.settings-section-title {
+  margin: 18px 2px 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.settings-field {
+  margin: 10px 2px;
+}
+
+.settings-field-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.settings-field-desc {
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: var(--text-sub);
+}
+
+.settings-input,
+.settings-textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-bg, #fff);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+
+.settings-input:focus,
+.settings-textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.settings-textarea {
+  min-height: 90px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  margin: 14px 2px 4px;
+  flex-wrap: wrap;
+}
+
+.settings-btn {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.settings-btn:hover {
+  opacity: 0.88;
+}
+
+.settings-btn.secondary {
+  background: var(--border);
+  color: var(--text);
 }
 
 /* ---------------------------------------------------------------------

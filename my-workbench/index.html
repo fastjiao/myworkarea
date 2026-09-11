@@ -30,8 +30,15 @@
 
     <!-- ===================== 左侧侧边栏 ===================== -->
     <aside class="sidebar">
-      <!-- 品牌标识 -->
-      <div class="sidebar-brand">教公台-阡稻工作室</div>
+      <!-- 品牌标识 + 侧边栏收起/展开按钮（t.md 两个 svg：收起/展开） -->
+      <div class="sidebar-brand">
+        <span class="sidebar-brand-text">教公台-阡稻工作室</span>
+        <button id="sidebar-toggle" class="sidebar-toggle" title="收起侧边栏" aria-label="收起或展开侧边栏">
+          <!-- 收起图标（向左）与展开图标（向右）由 renderer.js 根据 .sidebar.collapsed 状态切换显示 -->
+          <span class="sidebar-toggle-icon" data-icon="sidebar-collapse"></span>
+          <span class="sidebar-toggle-icon expand-only" data-icon="sidebar-expand"></span>
+        </button>
+      </div>
 
       <!-- 导航菜单：data-page 属性关联对应页面，data-icon 关联 SVG 图标 -->
       <nav class="sidebar-nav">
@@ -54,6 +61,16 @@
         <button class="nav-item" data-page="netease">
           <span class="nav-icon" data-icon="music"></span>
           <span class="nav-label">音乐</span>
+        </button>
+        <!-- 抖音：点击打开独立全屏窗口加载 douyin.com（data-external 标记走 IPC，不切换内部 page） -->
+        <button class="nav-item" data-page="douyin" data-external="douyin">
+          <span class="nav-icon" data-icon="douyin"></span>
+          <span class="nav-label">抖音</span>
+        </button>
+        <!-- 千问：点击打开独立窗口加载 chat.qwen.ai（网页嵌套，桌面 UA） -->
+        <button class="nav-item" data-page="qwen" data-external="qwen">
+          <span class="nav-icon" data-icon="qwen"></span>
+          <span class="nav-label">千问</span>
         </button>
 
       </nav>

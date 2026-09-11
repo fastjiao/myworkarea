@@ -444,6 +444,10 @@ async function init() {
   document.querySelectorAll('.nav-icon').forEach((el) => {
     el.innerHTML = window.svgIcon(el.dataset.icon, 18);
   });
+  // 填充侧边栏收起/展开按钮的两个 svg 图标（t.md：收起向左 / 展开向右）
+  document.querySelectorAll('.sidebar-toggle-icon').forEach((el) => {
+    el.innerHTML = window.svgIcon(el.dataset.icon, 16);
+  });
   document.getElementById('modal-close').innerHTML = window.svgIcon('close', 18);
 
   // 3. 应用主题
@@ -456,10 +460,27 @@ async function init() {
   PAGE_MODULES.sign = window.Sign;
   PAGE_MODULES.netease = window.Netease;
 
-  // 5. 绑定导航点击
+  // 5. 绑定导航点击（抖音/千问带 data-external，走 IPC 打开外部窗口，不切换内部 page）
   document.querySelectorAll('.nav-item').forEach((btn) => {
-    btn.addEventListener('click', () => switchPage(btn.dataset.page));
+    btn.addEventListener('click', () => {
+      const external = btn.dataset.external;
+      if (external) {
+        handleExternalNav(external);
+        return;
+      }
+      switchPage(btn.dataset.page);
+    });
   });
+
+  // 5.1 侧边栏收起/展开切换（品牌右侧 svg 按钮，收起后主内容区自动扩大）
+  const sidebarToggle = document.getElementById('sidebar-toggle');
+  const sidebarEl = document.querySelector('.sidebar');
+  if (sidebarToggle && sidebarEl) {
+    sidebarToggle.addEventListener('click', () => {
+      sidebarEl.classList.toggle('collapsed');
+      sidebarToggle.title = sidebarEl.classList.contains('collapsed') ? '展开侧边栏' : '收起侧边栏';
+    });
+  }
 
   // 6. 绑定主题切换
   document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
@@ -531,6 +552,20 @@ window.Store = Store;
 window.UI = UI;
 window.DateUtil = DateUtil;
 window.DEFAULT_APPS = DEFAULT_APPS;
+/**
+ * 处理「打开外部窗口」类导航（抖音/千问）
+ * 通过 IPC 通知主进程创建独立 BrowserWindow 加载对应网页，不切换内部 page
+ * @param {string} target 'douyin' | 'qwen'
+ */
+function handleExternalNav(target) {
+  if (!window.workbench) return;
+  if (target === 'douyin') {
+    window.workbench.openDouyin();
+  } else if (target === 'qwen') {
+    window.workbench.openQwen();
+  }
+}
+
 window.switchPage = switchPage;
 
 // 等待 DOM 就绪后启动

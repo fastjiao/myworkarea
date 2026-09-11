@@ -636,6 +636,8 @@ window.Netease = {
         if (Array.isArray(local.playlist)) this._playlist = local.playlist;
         if (local.userLevel) this._userLevel = local.userLevel;
         if (local.dakaLastDate) this._dakaLastDate = local.dakaLastDate;
+        if (local.loopMode) this._loopMode = local.loopMode;
+        if (typeof local.shuffle === 'boolean') this._shuffle = local.shuffle;
         this._state = 'logged-in';
         this.render();
         // 后台静默验证 cookie 是否仍有效，有效则刷新用户信息；无效则清退
@@ -738,6 +740,8 @@ window.Netease = {
       likedListCount: this._likedListCount,
       userLevel: this._userLevel,
       dakaLastDate: this._dakaLastDate,
+      loopMode: this._loopMode,
+      shuffle: this._shuffle,
       savedAt: Date.now()
     });
   },
@@ -1076,7 +1080,8 @@ window.Netease = {
       this._updatePlayerUi();
       this._updateProgress();
       this._updatePlayBtn();
-      this._updatePlayModeBtn();
+    this._updatePlayModeBtn();
+    this._saveLocalData();
     }
   },
 
