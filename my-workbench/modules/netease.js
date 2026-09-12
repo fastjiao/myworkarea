@@ -89,19 +89,24 @@ window.Netease = {
       const page = document.getElementById('page-netease');
       if (page && page.classList.contains('active')) this.render();
     });
-    // 空格键播放/暂停（只在音乐页面生效，排除输入框）
+    // 网易云快捷键（上一首/下一首/暂停播放），全局生效，排除输入框
     if (!this._keyBound) {
       this._keyBound = true;
       document.addEventListener('keydown', (e) => {
-        if (e.code !== 'Space') return;
-        const activePage = document.querySelector('.page.active');
-        if (!activePage || activePage.id !== 'page-netease') return;
         const tag = (e.target && e.target.tagName) || '';
-        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-        e.preventDefault();
-        this._togglePlay();
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        const sc = (Store.settings && Store.settings.neteaseShortcuts) || {};
+        if (e.code === (sc.playPause || 'Space')) { e.preventDefault(); this._togglePlay(); }
+        else if (e.code === (sc.prev || 'ArrowLeft')) { e.preventDefault(); this._prev(); }
+        else if (e.code === (sc.next || 'ArrowRight')) { e.preventDefault(); this._next(); }
       });
     }
+    // 独立恢复打卡目标数量（未登录时也能从本地数据恢复，设置弹窗可用）
+    this._loadLocalData().then((local) => {
+      if (local && local.dakaTarget) {
+        this._dakaTarget = Math.min(300, Math.max(1, local.dakaTarget));
+      }
+    }).catch(() => {});
   },
 
   // -------------------------------------------------------------------
@@ -636,6 +641,7 @@ window.Netease = {
         if (Array.isArray(local.playlist)) this._playlist = local.playlist;
         if (local.userLevel) this._userLevel = local.userLevel;
         if (local.dakaLastDate) this._dakaLastDate = local.dakaLastDate;
+        if (local.dakaTarget) this._dakaTarget = Math.min(300, Math.max(1, local.dakaTarget));
         if (local.loopMode) this._loopMode = local.loopMode;
         if (typeof local.shuffle === 'boolean') this._shuffle = local.shuffle;
         this._state = 'logged-in';
@@ -739,6 +745,7 @@ window.Netease = {
       playlist: this._playlist,
       likedListCount: this._likedListCount,
       userLevel: this._userLevel,
+      dakaTarget: this._dakaTarget,
       dakaLastDate: this._dakaLastDate,
       loopMode: this._loopMode,
       shuffle: this._shuffle,

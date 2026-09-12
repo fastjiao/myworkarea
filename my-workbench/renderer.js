@@ -59,7 +59,7 @@ const Store = {
   // 日历事件 / 待办（统一为事件模型，含 done 字段表示完成态）
   events: [],
   // 应用设置（主题偏好等）
-  settings: { theme: 'light' },
+  settings: { theme: 'system' },
 
   // 变更监听器列表，各模块注册 render 函数到这里
   _listeners: [],
@@ -78,7 +78,7 @@ const Store = {
   async load() {
     this.apps = (await window.workbench.readData('apps.json')) || [];
     this.events = (await window.workbench.readData('events.json')) || [];
-    this.settings = (await window.workbench.readData('settings.json')) || { theme: 'light' };
+    this.settings = (await window.workbench.readData('settings.json')) || { theme: 'system' };
   },
 
   /** 保存快捷方式数据 */
@@ -195,17 +195,25 @@ const UI = {
    * 打开通用模态框
    * @param {string} title 标题文字
    * @param {HTMLElement} content 要放入模态框内容区的元素（通常是表单）
+   * @param {string} [modalClass] 附加到 .modal 上的额外类（如 'settings-modal' 加宽）
    */
-  openModal(title, content) {
+  openModal(title, content, modalClass) {
     document.getElementById('modal-title').textContent = title;
     const body = document.getElementById('modal-body');
     body.innerHTML = '';
     body.appendChild(content);
+    const modalEl = document.querySelector('.modal');
+    if (modalEl) {
+      modalEl.classList.remove('settings-modal');
+      if (modalClass) modalEl.classList.add(modalClass);
+    }
     document.getElementById('modal-overlay').hidden = false;
   },
 
   /** 关闭模态框 */
   closeModal() {
+    const modalEl = document.querySelector('.modal');
+    if (modalEl) modalEl.classList.remove('settings-modal');
     document.getElementById('modal-overlay').hidden = true;
   },
 
@@ -248,29 +256,36 @@ const UI = {
 // 主题切换
 // ---------------------------------------------------------------------
 
-// 主题名 → 侧边栏按钮上的文字
-const THEME_LABELS = {
-  light: '暗色模式',
-  dark: '亮色模式'
-};
+// 系统主题检测：matchMedia 反映 OS 明暗偏好
+const _sysDarkMq = window.matchMedia('(prefers-color-scheme: dark)');
 
 /**
- * 应用主题到 <body data-theme="...">，并更新切换按钮文字
- * @param {'light'|'dark'} theme 主题名
+ * 把主题模式解析为实际应用的明/暗
+ * @param {'system'|'light'|'dark'} mode
+ * @returns {'light'|'dark'}
+ */
+function resolveTheme(mode) {
+  if (mode === 'system') return _sysDarkMq.matches ? 'dark' : 'light';
+  return mode === 'dark' ? 'dark' : 'light';
+}
+
+/**
+ * 应用主题到 <body data-theme="...">，并持久化到 settings.json
+ * @param {'system'|'light'|'dark'} theme 主题模式
  */
 function applyTheme(theme) {
-  document.body.dataset.theme = theme;
-  const btn = document.getElementById('theme-toggle');
-  if (btn) btn.textContent = THEME_LABELS[theme] || THEME_LABELS.light;
-  Store.settings.theme = theme;
+  const mode = theme || 'system';
+  document.body.dataset.theme = resolveTheme(mode);
+  Store.settings.theme = mode;
   Store.saveSettings();
 }
 
-/** 切换亮/暗主题 */
-function toggleTheme() {
-  const next = Store.settings.theme === 'dark' ? 'light' : 'dark';
-  applyTheme(next);
-}
+// 系统明暗变化时，若当前为"跟随系统"则自动切换
+_sysDarkMq.addEventListener('change', () => {
+  if ((Store.settings.theme || 'system') === 'system') {
+    document.body.dataset.theme = resolveTheme('system');
+  }
+});
 
 // ---------------------------------------------------------------------
 // 侧边栏导航切换
@@ -307,6 +322,25 @@ function switchPage(pageName) {
   if (mod && typeof mod.render === 'function') {
     mod.render();
   }
+  // 内嵌 webview（抖音/千问）懒加载：首次切到该页才真正加载对应网站，
+  // 避免应用启动时就请求外部站点；同时注入协议拦截 preload。
+  if (pageName === 'douyin' || pageName === 'qwen') {
+    const wv = document.getElementById('webview-' + pageName);
+    if (wv && !wv.getAttribute('src')) {
+      wv.setAttribute('preload', webviewPreloadUrl());
+      wv.setAttribute('src', wv.dataset.src || '');
+    }
+  }
+}
+
+/**
+ * 计算 webview 需要的协议拦截 preload 绝对路径（file:// 指向 block-external-protocol-preload.js）
+ * 开发/打包后 index.html 均位于应用根目录，从当前页面 URL 目录推导
+ */
+function webviewPreloadUrl() {
+  const url = new URL(window.location.href);
+  const dir = url.pathname.substring(0, url.pathname.lastIndexOf('/'));
+  return 'file://' + encodeURI(dir) + '/block-external-protocol-preload.js';
 }
 
 // ---------------------------------------------------------------------
@@ -451,7 +485,7 @@ async function init() {
   document.getElementById('modal-close').innerHTML = window.svgIcon('close', 18);
 
   // 3. 应用主题
-  applyTheme(Store.settings.theme || 'light');
+  applyTheme(Store.settings.theme || 'system');
 
   // 4. 注册可切换的页面模块
   PAGE_MODULES.dashboard = window.Dashboard;
@@ -460,14 +494,9 @@ async function init() {
   PAGE_MODULES.sign = window.Sign;
   PAGE_MODULES.netease = window.Netease;
 
-  // 5. 绑定导航点击（抖音/千问带 data-external，走 IPC 打开外部窗口，不切换内部 page）
+  // 5. 绑定导航点击（抖音/千问为内嵌 webview 虚拟页面，走 switchPage 切换）
   document.querySelectorAll('.nav-item').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const external = btn.dataset.external;
-      if (external) {
-        handleExternalNav(external);
-        return;
-      }
       switchPage(btn.dataset.page);
     });
   });
@@ -482,8 +511,7 @@ async function init() {
     });
   }
 
-  // 6. 绑定主题切换
-  document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+  // 6. 主题切换已移入设置弹窗（通用→明暗模式），此处无需绑定
 
   // 7. 绑定模态框关闭（右上角 ×、点击遮罩、Esc 键）
   document.getElementById('modal-close').addEventListener('click', UI.closeModal);
@@ -552,19 +580,6 @@ window.Store = Store;
 window.UI = UI;
 window.DateUtil = DateUtil;
 window.DEFAULT_APPS = DEFAULT_APPS;
-/**
- * 处理「打开外部窗口」类导航（抖音/千问）
- * 通过 IPC 通知主进程创建独立 BrowserWindow 加载对应网页，不切换内部 page
- * @param {string} target 'douyin' | 'qwen'
- */
-function handleExternalNav(target) {
-  if (!window.workbench) return;
-  if (target === 'douyin') {
-    window.workbench.openDouyin();
-  } else if (target === 'qwen') {
-    window.workbench.openQwen();
-  }
-}
 
 window.switchPage = switchPage;
 

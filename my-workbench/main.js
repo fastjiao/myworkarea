@@ -37,6 +37,11 @@ const DATA_DIR = app.isPackaged
   ? path.join(process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(app.getPath('exe')), 'data')
   : path.join(__dirname, 'data');
 
+// 所有 session 数据（cookie/localStorage/IndexedDB 等）重定向到 DATA_DIR 下的 user-data，
+// 与配置文件放一起跟随程序目录，便于备份/迁移/清理。
+// 必须在 app ready 之前、任何 session 创建前调用。
+app.setPath('userData', path.join(DATA_DIR, 'user-data'));
+
 // 允许读写的数据文件白名单（防止渲染进程通过文件名参数访问任意文件）
 const ALLOWED_FILES = ['apps.json', 'events.json', 'settings.json', 'sign-tasks.json', 'bg-run.json', 'netease-cookie.json', 'netease-data.json', 'fire-spark-config.json', 'fire-spark-messages.json'];
 
@@ -371,10 +376,11 @@ function createWindow() {
     minHeight: 600,
     title: '教公台-阡稻工作室',
     backgroundColor: '#f0f2f5',
-      webPreferences: {
+webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      webviewTag: true
     }
   });
 
@@ -434,8 +440,16 @@ function getFireSparkSession() {
 // 记录需要拦截外部协议唤起的 webContents ID，供 session permission handler 精确匹配
 const blockedWcIds = new Set();
 
-function blockExternalProtocols(win) {
-  const wc = win.webContents;
+/**
+ * 拦截非标准协议链接（如 bytedance://），阻止系统弹出"找不到应用"对话框
+ * 抖音登录/滑动时会尝试唤起 PC 客户端（bytedance:// 协议），未装客户端时系统弹窗打扰用户
+ * 主进程的 will-navigate 等事件对外部协议可能不触发（外部协议不走导航流程，直接交给系统），
+ * 因此在渲染层注入 JS 直接拦截 <a> 点击 / window.open / location 赋值，在 Chromium 处理前阻止。
+ * 参数为 WebContents（BrowserWindow 传 .webContents，webview 直接传其 webContents）。
+ * @param {WebContents} contents
+ */
+function blockExternalProtocols(contents) {
+  const wc = contents;
   blockedWcIds.add(wc.id);
   wc.on('destroyed', () => blockedWcIds.delete(wc.id));
   // 允许的标准协议白名单
@@ -489,6 +503,14 @@ function blockExternalProtocols(win) {
   // 覆盖 <a> 点击 / window.open / location / 动态 iframe，此处主进程事件仅作兜底
 }
 
+// 主窗口内嵌的 <webview>（抖音/千问页面）创建的 webContents 同样挂上外部协议拦截，
+// 否则 webview 内的 bytedance:// 等协议仍会触发 Chromium 确认弹窗
+app.on('web-contents-created', (event, contents) => {
+  if (contents.getType() === 'webview') {
+    blockExternalProtocols(contents);
+  }
+});
+
 /**
  * 打开抖音独立全屏窗口（浏览抖音网页版，支持手动刷视频/看直播/聊天）
  * 复用已有窗口，避免重复打开
@@ -511,7 +533,7 @@ function createDouyinWindow() {
       nodeIntegration: false
     }
   });
-  blockExternalProtocols(douyinWindow);
+  blockExternalProtocols(douyinWindow.webContents);
   douyinWindow.loadURL('https://www.douyin.com/');
   douyinWindow.on('closed', () => { douyinWindow = null; });
 }
@@ -543,7 +565,7 @@ function createQwenWindow() {
   qwenWindow.webContents.setUserAgent(
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
   );
-  blockExternalProtocols(qwenWindow);
+  blockExternalProtocols(qwenWindow.webContents);
   qwenWindow.loadURL('https://chat.qwen.ai/');
   qwenWindow.on('closed', () => { qwenWindow = null; });
 }
@@ -568,7 +590,7 @@ function getOrCreateFireSparkWindow() {
       nodeIntegration: false
     }
   });
-  blockExternalProtocols(fireSparkWindow);
+  blockExternalProtocols(fireSparkWindow.webContents);
   fireSparkWindow.on('closed', () => { fireSparkWindow = null; });
   return fireSparkWindow;
 }

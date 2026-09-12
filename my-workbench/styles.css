@@ -200,7 +200,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 700;
   color: #ffffff;
   padding: 0 16px 24px;
@@ -213,6 +213,7 @@ body {
 .sidebar-brand-text {
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* 侧边栏收起/展开按钮（t.md 两个 svg 图标切换） */
@@ -295,6 +296,12 @@ body {
   margin: 0 12px;
 }
 
+/* 明暗切换已移入设置弹窗，footer 只剩齿轮按钮，撑满宽度 */
+.sidebar-footer .settings-btn {
+  flex: 1;
+  width: auto;
+}
+
 .theme-toggle {
   flex: 1;
   min-width: 0;
@@ -312,20 +319,41 @@ body {
   background: rgba(255, 255, 255, 0.08);
 }
 
-/* 设置入口：主题按钮右侧的齿轮图标按钮 */
+/* 设置入口：齿轮图标 + "设置"文字（收起时只显示齿轮） */
 .settings-btn {
   flex-shrink: 0;
-  width: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0;
+  gap: 8px;
+  padding: 9px 14px;
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 8px;
   background: transparent;
   color: var(--sidebar-text);
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.settings-label {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.sidebar.collapsed .settings-label {
+  display: none;
+}
+
+/* 收起后设置按钮变为 1:1 正方形图标按钮，与导航项视觉对齐 */
+.sidebar.collapsed .sidebar-footer {
+  padding: 16px 8px 0;
+  margin: 0 8px;
+}
+
+.sidebar.collapsed .settings-btn {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  padding: 0;
 }
 
 .settings-btn svg {
@@ -353,6 +381,31 @@ body {
 
 .page.active {
   display: block;
+}
+
+/* 内嵌网页（抖音/千问）虚拟页面：去留白、铺满主内容区。
+   改用 flex 撑开（避免 height:100% 百分比高度链依赖），
+   切到内嵌页面时 .app-main 变为纵向 flex，.page-embed 占据全部剩余空间 */
+.app-main:has(.page-embed.active) {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-embed {
+  flex: 1;
+  min-height: 0;
+}
+
+.page-embed.active {
+  display: flex;
+}
+
+.webview-box {
+  flex: 1;
+  min-height: 0;
+  border: none;
 }
 
 /* ---------------------------------------------------------------------
@@ -1000,6 +1053,68 @@ body {
 /* ---------------------------------------------------------------------
    一键签到（Sign）
    --------------------------------------------------------------------- */
+
+/* 签到任务卡片网格：每个签到程序一张独立卡片 */
+.skill-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+}
+
+/* 签到任务卡片基础样式（玻璃拟态，与首页快捷启动卡片风格一致） */
+.skill-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.skill-card:hover {
+  border-color: rgba(95, 134, 255, 0.45);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+}
+
+.skill-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.skill-name {
+  font-size: 15px;
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 待签到 / 签到中 / 今日已签 状态文字（配色由 sign-status-* 覆盖） */
+.skill-level {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(128, 128, 128, 0.14);
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.skill-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
 .sign-action-bar {
   margin-bottom: 16px;
   padding: 12px 16px;
@@ -1960,6 +2075,121 @@ body {
 /* =====================================================================
    设置弹窗（齿轮入口）：设置行 + iOS 风格开关
    ===================================================================== */
+
+/* 设置弹窗固定宽高（不随分区内容变化），内容区内部滚动 */
+.modal.settings-modal {
+  width: 720px;
+  height: 560px;
+  max-height: 86vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal.settings-modal .modal-header {
+  flex-shrink: 0;
+}
+
+.modal.settings-modal .modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+}
+
+/* 设置弹窗左右布局 */
+.settings-layout {
+  display: flex;
+  gap: 20px;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+.settings-nav {
+  width: 140px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  padding-right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-nav-item {
+  text-align: left;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.settings-nav-item:hover {
+  background: rgba(95, 134, 255, 0.1);
+  color: var(--text);
+}
+
+.settings-nav-item.active {
+  background: rgba(95, 134, 255, 0.18);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.settings-panel {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* 明暗模式三选按钮组 */
+.theme-options {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.theme-option {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  background: var(--glass-bg);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  text-align: center;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.theme-option:hover {
+  border-color: rgba(95, 134, 255, 0.45);
+  color: var(--text);
+}
+
+.theme-option.active {
+  background: rgba(95, 134, 255, 0.18);
+  border-color: rgba(95, 134, 255, 0.6);
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* 快捷键录入框（点击后按下快捷键录入） */
+.shortcut-input {
+  cursor: pointer;
+  text-align: center;
+  font-weight: 600;
+}
+
+.shortcut-input:focus {
+  border-color: var(--primary);
+  background: rgba(95, 134, 255, 0.08);
+}
+
 .settings-row {
   display: flex;
   align-items: center;
