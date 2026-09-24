@@ -17,6 +17,55 @@ window.Home = {
   init() {
     Store.onChange(() => this.render());
     this.render();
+    // 启动时后台自动扫描系统已安装软件，新发现的自动添加到快捷启动
+    this._autoScanSystemApps();
+  },
+
+  /**
+   * 自动扫描系统已安装软件并添加到快捷启动
+   * 后台静默执行：扫描 → 与现有列表去重 → 新发现的自动添加 → Toast 提示
+   * 失败时静默忽略，不影响应用正常使用
+   */
+  async _autoScanSystemApps() {
+    // 仅首次启动时自动扫描系统软件，此后不再自动识别（标志持久化于 settings.json）
+    if (Store.settings && Store.settings.autoScanDone) return;
+    try {
+      const res = await window.workbench.scanInstalledApps();
+      if (!res || !res.success || !res.apps || res.apps.length === 0) return;
+      // 与现有快捷启动列表对比，按 exe 路径去重
+      const existingPaths = new Set(Store.appShortcuts().map((a) => (a.path || '').toLowerCase()));
+      const newApps = res.apps.filter((a) => !existingPaths.has(a.path.toLowerCase()));
+      if (newApps.length === 0) return;
+      // 批量添加新发现的软件
+      const ts = Date.now();
+      const newItems = newApps.map((a, i) => ({
+        id: 'shortcut-' + ts + '-' + i,
+        type: 'app',
+        name: a.name,
+        iconType: 'auto',
+        icon: '',
+        path: a.path
+      }));
+      Store.apps.push(...newItems);
+      const saved = await Store.saveApps();
+      if (saved && saved.success === false) {
+        // 保存失败：回滚
+        newItems.forEach((item) => {
+          const idx = Store.apps.indexOf(item);
+          if (idx >= 0) Store.apps.splice(idx, 1);
+        });
+        return;
+      }
+      Store.notify();
+      UI.setToast('已自动添加 ' + newItems.length + ' 个系统软件', 'success', 4000);
+    } catch (e) {
+      // 静默失败，不影响正常使用
+    } finally {
+      // 无论扫描结果如何，均标记已完成首次自动识别，此后不再自动扫描
+      Store.settings = Store.settings || {};
+      Store.settings.autoScanDone = true;
+      Store.saveSettings();
+    }
   },
 
   // -------------------------------------------------------------------
@@ -41,6 +90,20 @@ window.Home = {
     addBtn.appendChild(UI.el('span', '', '添加软件'));
     addBtn.addEventListener('click', () => this._openAddModal('app'));
     title.appendChild(addBtn);
+
+    // 扫描系统已安装软件（读取开始菜单 + 注册表，勾选后批量添加）
+    const scanBtn = UI.el('button', 'btn btn-ghost btn-sm');
+    scanBtn.appendChild(UI.icon('search', 14));
+    scanBtn.appendChild(UI.el('span', '', '扫描系统软件'));
+    scanBtn.addEventListener('click', () => this._openScanModal());
+    title.appendChild(scanBtn);
+
+    // 管理软件（弹窗批量删除不想要的快捷方式）
+    const manageBtn = UI.el('button', 'btn btn-ghost btn-sm');
+    manageBtn.appendChild(UI.icon('trash', 14));
+    manageBtn.appendChild(UI.el('span', '', '管理软件'));
+    manageBtn.addEventListener('click', () => this._openManageModal());
+    title.appendChild(manageBtn);
 
     const strip = UI.el('div', 'shortcut-strip');
     const apps = Store.appShortcuts();
@@ -536,6 +599,407 @@ window.Home = {
   },
 
   // -------------------------------------------------------------------
+  // 扫描系统已安装软件：读取开始菜单 + 注册表，勾选后批量添加
+  // -------------------------------------------------------------------
+  async _openScanModal() {
+    // 先弹出 loading 模态框
+    const loadingWrap = UI.el('div', 'scan-loading');
+    loadingWrap.appendChild(UI.icon('loading', 24));
+    loadingWrap.appendChild(UI.el('div', '', '正在扫描系统已安装软件，请稍候…'));
+    UI.openModal('扫描系统软件', loadingWrap, 'scan-modal');
+
+    // 调用主进程扫描
+    const res = await window.workbench.scanInstalledApps();
+    if (!res || !res.success) {
+      UI.closeModal();
+      UI.setToast(res && res.message ? '扫描失败：' + res.message : '扫描失败', 'error');
+      return;
+    }
+    const allApps = res.apps || [];
+    if (allApps.length === 0) {
+      UI.closeModal();
+      UI.setToast('未扫描到任何已安装软件', 'error');
+      return;
+    }
+
+    // 已添加的软件路径集合（用于灰显已存在的项）
+    const existingPaths = new Set(Store.appShortcuts().map((a) => (a.path || '').toLowerCase()));
+    // 待添加的选中集合
+    const selected = new Set();
+
+    // 构建模态框内容
+    const wrap = UI.el('div', 'scan-wrap');
+
+    // 顶部工具栏：搜索框 + 全选/反选
+    const toolbar = UI.el('div', 'scan-toolbar');
+    const searchInput = UI.el('input', 'scan-search');
+    searchInput.type = 'text';
+    searchInput.placeholder = '搜索软件名称…';
+    toolbar.appendChild(searchInput);
+    const selectAllBtn = UI.el('button', 'btn btn-ghost btn-sm', '全选');
+    selectAllBtn.type = 'button';
+    const invertBtn = UI.el('button', 'btn btn-ghost btn-sm', '反选');
+    invertBtn.type = 'button';
+    toolbar.appendChild(selectAllBtn);
+    toolbar.appendChild(invertBtn);
+    wrap.appendChild(toolbar);
+
+    // 列表容器
+    const list = UI.el('div', 'scan-list');
+    wrap.appendChild(list);
+
+    // 底部操作栏
+    const actions = UI.el('div', 'form-actions scan-actions');
+    const countLabel = UI.el('span', 'scan-count', '已选 0 个');
+    const cancelBtn = UI.el('button', 'btn btn-ghost', '取消');
+    cancelBtn.type = 'button';
+    cancelBtn.addEventListener('click', () => UI.closeModal());
+    const addBtn = UI.el('button', 'btn btn-primary', '添加已选');
+    addBtn.type = 'button';
+    actions.appendChild(countLabel);
+    actions.appendChild(cancelBtn);
+    actions.appendChild(addBtn);
+    wrap.appendChild(actions);
+
+    // 渲染列表项
+    const renderList = (filter) => {
+      list.innerHTML = '';
+      const lower = filter ? filter.toLowerCase() : '';
+      const filtered = lower
+        ? allApps.filter((a) => a.name.toLowerCase().includes(lower))
+        : allApps;
+      if (filtered.length === 0) {
+        list.appendChild(UI.el('div', 'empty-tip', '没有匹配的软件'));
+        return;
+      }
+      filtered.forEach((app) => {
+        const key = app.path.toLowerCase();
+        const exists = existingPaths.has(key);
+        const row = UI.el('div', 'scan-row' + (exists ? ' scan-row-disabled' : ''));
+        row.dataset.key = key;
+
+        // 勾选框
+        const cb = UI.el('input', 'scan-checkbox');
+        cb.type = 'checkbox';
+        cb.disabled = exists;
+        if (selected.has(key)) cb.checked = true;
+        if (!exists) {
+          cb.addEventListener('change', () => {
+            if (cb.checked) selected.add(key); else selected.delete(key);
+            updateCount();
+          });
+        }
+        row.appendChild(cb);
+
+        // 首字母彩色图标占位（不抓 .exe 图标，添加后由现有机制懒加载）
+        const iconWrap = UI.el('div', 'scan-icon');
+        iconWrap.appendChild(this._makeLetterIcon({ name: app.name }));
+        row.appendChild(iconWrap);
+
+        // 名称 + 路径
+        const info = UI.el('div', 'scan-info');
+        info.appendChild(UI.el('div', 'scan-name', app.name));
+        info.appendChild(UI.el('div', 'scan-path', app.path));
+        row.appendChild(info);
+
+        // 已添加标记
+        if (exists) {
+          row.appendChild(UI.el('span', 'scan-exists', '已添加'));
+        }
+
+        list.appendChild(row);
+      });
+    };
+
+    // 更新已选计数
+    const updateCount = () => {
+      countLabel.textContent = '已选 ' + selected.size + ' 个';
+    };
+
+    // 搜索实时过滤
+    searchInput.addEventListener('input', () => renderList(searchInput.value.trim()));
+
+    // 全选（仅选当前过滤结果中未禁用的）
+    selectAllBtn.addEventListener('click', () => {
+      const lower = searchInput.value.trim().toLowerCase();
+      allApps.forEach((app) => {
+        const key = app.path.toLowerCase();
+        if (existingPaths.has(key)) return;
+        if (lower && !app.name.toLowerCase().includes(lower)) return;
+        selected.add(key);
+      });
+      renderList(searchInput.value.trim());
+      updateCount();
+    });
+
+    // 反选（仅对当前过滤结果中未禁用的）
+    invertBtn.addEventListener('click', () => {
+      const lower = searchInput.value.trim().toLowerCase();
+      allApps.forEach((app) => {
+        const key = app.path.toLowerCase();
+        if (existingPaths.has(key)) return;
+        if (lower && !app.name.toLowerCase().includes(lower)) return;
+        if (selected.has(key)) selected.delete(key); else selected.add(key);
+      });
+      renderList(searchInput.value.trim());
+      updateCount();
+    });
+
+    // 添加已选：批量 push 到 Store.apps 并保存
+    addBtn.addEventListener('click', async () => {
+      if (selected.size === 0) {
+        UI.setToast('请先勾选要添加的软件', 'error');
+        return;
+      }
+      const toAdd = allApps.filter((a) => selected.has(a.path.toLowerCase()));
+      const ts = Date.now();
+      const newItems = toAdd.map((a, i) => ({
+        id: 'shortcut-' + ts + '-' + i,
+        type: 'app',
+        name: a.name,
+        iconType: 'auto',
+        icon: '',
+        path: a.path
+      }));
+      Store.apps.push(...newItems);
+      const saved = await Store.saveApps();
+      if (saved && saved.success === false) {
+        // 保存失败：回滚
+        newItems.forEach((item) => {
+          const idx = Store.apps.indexOf(item);
+          if (idx >= 0) Store.apps.splice(idx, 1);
+        });
+        return UI.setToast('添加失败：' + saved.message, 'error');
+      }
+      UI.closeModal();
+      Store.notify();
+      UI.setToast('已添加 ' + newItems.length + ' 个软件', 'success');
+    });
+
+    // 首次渲染并打开模态框
+    renderList('');
+    updateCount();
+    UI.openModal('扫描系统软件（共 ' + allApps.length + ' 个）', wrap, 'scan-modal');
+    searchInput.focus();
+  },
+
+  // -------------------------------------------------------------------
+  // 管理软件：批量删除已有快捷方式 + 添加扫描未识别的文件快捷方式
+  // 复用 scan-modal 样式；数据源为 Store 中所有快捷方式（内置项禁删）
+  // -------------------------------------------------------------------
+  _openManageModal() {
+    // 汇总所有快捷方式（软件 + 文件/文件夹 + 网页）
+    const allItems = [
+      ...Store.appShortcuts(),
+      ...Store.fileShortcuts(),
+      ...Store.webShortcuts()
+    ];
+    if (allItems.length === 0) {
+      UI.setToast('暂无快捷方式可管理', 'error');
+      return;
+    }
+
+    // 待删除的选中 id 集合
+    const selected = new Set();
+
+    // 构建模态框内容（复用 scan-wrap 系列样式）
+    const wrap = UI.el('div', 'scan-wrap');
+
+    // 顶部工具栏：搜索框 + 类型筛选 + 全选/反选
+    const toolbar = UI.el('div', 'scan-toolbar');
+    const searchInput = UI.el('input', 'scan-search');
+    searchInput.type = 'text';
+    searchInput.placeholder = '搜索名称…';
+    toolbar.appendChild(searchInput);
+
+    // 类型筛选下拉框
+    const typeSelect = UI.el('select', 'scan-filter');
+    [
+      { value: 'all', label: '全部' },
+      { value: 'app', label: '软件' },
+      { value: 'file', label: '文件' },
+      { value: 'folder', label: '文件夹' },
+      { value: 'web', label: '网页' }
+    ].forEach((opt) => {
+      const o = UI.el('option', '', opt.label);
+      o.value = opt.value;
+      typeSelect.appendChild(o);
+    });
+    toolbar.appendChild(typeSelect);
+
+    const selectAllBtn = UI.el('button', 'btn btn-ghost btn-sm', '全选');
+    selectAllBtn.type = 'button';
+    const invertBtn = UI.el('button', 'btn btn-ghost btn-sm', '反选');
+    invertBtn.type = 'button';
+    toolbar.appendChild(selectAllBtn);
+    toolbar.appendChild(invertBtn);
+    wrap.appendChild(toolbar);
+
+    // 列表容器
+    const list = UI.el('div', 'scan-list');
+    wrap.appendChild(list);
+
+    // 底部操作栏
+    const actions = UI.el('div', 'form-actions scan-actions');
+    const countLabel = UI.el('span', 'scan-count', '已选 0 个');
+    const addFileBtn = UI.el('button', 'btn btn-ghost', '添加文件快捷方式');
+    addFileBtn.type = 'button';
+    const closeBtn = UI.el('button', 'btn btn-ghost', '关闭');
+    closeBtn.type = 'button';
+    closeBtn.addEventListener('click', () => UI.closeModal());
+    const deleteBtn = UI.el('button', 'btn btn-primary', '删除已选');
+    deleteBtn.type = 'button';
+    actions.appendChild(countLabel);
+    actions.appendChild(addFileBtn);
+    actions.appendChild(closeBtn);
+    actions.appendChild(deleteBtn);
+    wrap.appendChild(actions);
+
+    // 类型显示文字映射
+    const typeText = (t) =>
+      t === 'app' ? '软件' : t === 'file' ? '文件' : t === 'folder' ? '文件夹' : '网页';
+
+    // 渲染列表（按搜索关键字 + 类型筛选过滤）
+    const renderList = () => {
+      const kw = searchInput.value.trim().toLowerCase();
+      const tf = typeSelect.value;
+      list.innerHTML = '';
+      const filtered = allItems.filter((item) => {
+        if (tf !== 'all' && item.type !== tf) return false;
+        if (kw && !item.name.toLowerCase().includes(kw)) return false;
+        return true;
+      });
+      if (filtered.length === 0) {
+        list.appendChild(UI.el('div', 'empty-tip', '没有匹配的快捷方式'));
+        return;
+      }
+      filtered.forEach((item) => {
+        const disabled = !!item.isBuiltin;
+        const row = UI.el('div', 'scan-row' + (disabled ? ' scan-row-disabled' : ''));
+        row.dataset.id = item.id;
+
+        // 勾选框（内置项禁用）
+        const cb = UI.el('input', 'scan-checkbox');
+        cb.type = 'checkbox';
+        cb.disabled = disabled;
+        if (selected.has(item.id)) cb.checked = true;
+        if (!disabled) {
+          cb.addEventListener('change', () => {
+            if (cb.checked) selected.add(item.id); else selected.delete(item.id);
+            updateCount();
+          });
+        }
+        row.appendChild(cb);
+
+        // 首字母彩色图标占位
+        const iconWrap = UI.el('div', 'scan-icon');
+        iconWrap.appendChild(this._makeLetterIcon({ name: item.name }));
+        row.appendChild(iconWrap);
+
+        // 名称 + 路径
+        const info = UI.el('div', 'scan-info');
+        info.appendChild(UI.el('div', 'scan-name', item.name + (disabled ? '（内置）' : '')));
+        info.appendChild(UI.el('div', 'scan-path', item.path));
+        row.appendChild(info);
+
+        // 类型徽章
+        row.appendChild(UI.el('span', 'scan-exists', typeText(item.type)));
+        list.appendChild(row);
+      });
+    };
+
+    // 更新已选计数
+    const updateCount = () => {
+      countLabel.textContent = '已选 ' + selected.size + ' 个';
+    };
+
+    // 搜索 / 筛选实时刷新
+    searchInput.addEventListener('input', () => renderList());
+    typeSelect.addEventListener('change', () => renderList());
+
+    // 全选（仅当前过滤结果中可选项）
+    selectAllBtn.addEventListener('click', () => {
+      const kw = searchInput.value.trim().toLowerCase();
+      const tf = typeSelect.value;
+      allItems.forEach((item) => {
+        if (item.isBuiltin) return;
+        if (tf !== 'all' && item.type !== tf) return;
+        if (kw && !item.name.toLowerCase().includes(kw)) return;
+        selected.add(item.id);
+      });
+      renderList();
+      updateCount();
+    });
+
+    // 反选（仅对当前过滤结果中可选项）
+    invertBtn.addEventListener('click', () => {
+      const kw = searchInput.value.trim().toLowerCase();
+      const tf = typeSelect.value;
+      allItems.forEach((item) => {
+        if (item.isBuiltin) return;
+        if (tf !== 'all' && item.type !== tf) return;
+        if (kw && !item.name.toLowerCase().includes(kw)) return;
+        if (selected.has(item.id)) selected.delete(item.id); else selected.add(item.id);
+      });
+      renderList();
+      updateCount();
+    });
+
+    // 删除已选：二次确认后批量删除
+    deleteBtn.addEventListener('click', async () => {
+      if (selected.size === 0) {
+        UI.setToast('请先勾选要删除的快捷方式', 'error');
+        return;
+      }
+      if (!confirm('确定删除选中的 ' + selected.size + ' 个快捷方式吗？')) return;
+      const ids = new Set(selected);
+      Store.apps = Store.apps.filter((a) => !ids.has(a.id));
+      const saved = await Store.saveApps();
+      if (saved && saved.success === false) {
+        return UI.setToast('删除失败：' + saved.message, 'error');
+      }
+      UI.closeModal();
+      Store.notify();
+      UI.setToast('已删除 ' + ids.size + ' 个快捷方式', 'success');
+    });
+
+    // 添加文件快捷方式：调用系统文件对话框选择任意文件，按扩展名判定类型
+    addFileBtn.addEventListener('click', async () => {
+      const res = await window.workbench.selectPath('file');
+      if (res.canceled || !res.path) return;
+      const filePath = res.path;
+      const ext = filePath.split('.').pop().toLowerCase();
+      const isApp = ['exe', 'lnk', 'bat', 'cmd', 'msi'].includes(ext);
+      const base = filePath.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
+      const name = isApp ? base.replace(/\.(exe|lnk|bat|cmd|msi)$/i, '') : base;
+      const item = {
+        id: 'shortcut-' + Date.now(),
+        type: isApp ? 'app' : 'file',
+        name,
+        iconType: 'auto',
+        icon: '',
+        path: filePath
+      };
+      Store.apps.push(item);
+      const saved = await Store.saveApps();
+      if (saved && saved.success === false) {
+        Store.apps.pop();
+        return UI.setToast('添加失败：' + saved.message, 'error');
+      }
+      // 刷新管理弹窗列表，保留当前选中状态
+      allItems.push(item);
+      renderList();
+      UI.setToast('已添加「' + name + '」', 'success');
+    });
+
+    // 首次渲染并打开模态框
+    renderList();
+    updateCount();
+    UI.openModal('管理软件（共 ' + allItems.length + ' 个）', wrap, 'scan-modal');
+    searchInput.focus();
+  },
+
+  // -------------------------------------------------------------------
   // 添加 / 修改快捷方式模态框（软件 / 文件 / 文件夹 / 网页）
   // 传入 editItem 则进入「修改」模式：预填数据并在提交时更新原条目
   // -------------------------------------------------------------------
@@ -577,7 +1041,7 @@ window.Home = {
       { value: 'auto', label: '自动（跟随类型）' },
       { value: 'emoji', label: 'Emoji 表情' },
       { value: 'letter', label: '首字母' },
-      { value: 'image', label: '自定义图片' }
+      { value: 'image', label: '自定义图标' }
     ].forEach((opt) => {
       const o = UI.el('option', '', opt.label);
       o.value = opt.value;
@@ -596,7 +1060,7 @@ window.Home = {
     // 自定义图片选择 + 预览（来源为 image 时显示）
     const imageWrap = UI.el('div', 'icon-image-wrap');
     imageWrap.style.display = 'none';
-    const pickImgBtn = UI.el('button', 'btn btn-ghost btn-sm', '选择图片…');
+    const pickImgBtn = UI.el('button', 'btn btn-ghost btn-sm', '选择图标…');
     pickImgBtn.type = 'button';
     const imagePreview = UI.el('span', 'icon-image-preview');
     imageWrap.appendChild(pickImgBtn);

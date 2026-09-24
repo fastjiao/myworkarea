@@ -57,6 +57,12 @@ contextBridge.exposeInMainWorld('workbench', {
    */
   getWebFavicon: (url) => ipcRenderer.invoke('get-web-favicon', url),
 
+  /**
+   * 扫描系统已安装软件（开始菜单 .lnk + 卸载注册表，合并去重）
+   * @returns {Promise<{success: boolean, apps: Array<{name: string, path: string}>, message?: string}>}
+   */
+  scanInstalledApps: () => ipcRenderer.invoke('scan-installed-apps'),
+
   // ======================== 设置 ========================
 
   /**

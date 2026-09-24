@@ -3114,3 +3114,174 @@ body[data-theme='light'] .netease-lyric-empty { color: rgba(0,0,0,0.25); }
   color: var(--text-sub);
   text-align: center;
 }
+
+/* ---------------------------------------------------------------------
+   扫描系统已安装软件模态框
+   --------------------------------------------------------------------- */
+.modal.scan-modal {
+  width: 640px;
+}
+
+.modal.scan-modal .modal-body {
+  padding: 0;
+}
+
+.scan-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 40px 0;
+  color: var(--text-sub);
+}
+
+.scan-wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 顶部工具栏：搜索框 + 全选/反选 */
+.scan-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 22px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.scan-search {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  background: var(--card-bg);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.scan-search:focus {
+  border-color: var(--primary);
+}
+
+/* 管理弹窗类型筛选下拉框 */
+.scan-filter {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--card-bg);
+  color: var(--text);
+  outline: none;
+  cursor: pointer;
+}
+
+/* 列表区：固定高度内部滚动 */
+.scan-list {
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 6px 22px;
+}
+
+/* 单行 */
+.scan-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.scan-row:hover {
+  background: var(--hover-bg);
+}
+
+.scan-row-disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.scan-row-disabled:hover {
+  background: transparent;
+}
+
+.scan-checkbox {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+/* 首字母图标占位 */
+.scan-icon {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.scan-icon .shortcut-letter-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 名称 + 路径 */
+.scan-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.scan-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scan-path {
+  font-size: 11px;
+  color: var(--text-sub);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+/* 已添加标记 */
+.scan-exists {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-sub);
+  background: var(--hover-bg);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+/* 底部操作栏 */
+.scan-actions {
+  padding: 12px 22px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.scan-count {
+  font-size: 13px;
+  color: var(--text-sub);
+  margin-right: auto;
+}

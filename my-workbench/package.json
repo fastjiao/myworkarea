@@ -12,7 +12,7 @@
     "appId": "com.jiaogongtai.workbench",
     "productName": "教公台-阡稻工作室",
     "directories": {
-      "output": "jiao-release"
+      "output": "../jiao-release"
     },
     "win": {
       "target": [
@@ -21,8 +21,22 @@
           "arch": [
             "x64"
           ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
         }
       ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "教公台-阡稻工作室"
     },
     "files": [
       "main.js",

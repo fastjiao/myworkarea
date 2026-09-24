@@ -204,7 +204,8 @@ const UI = {
     body.appendChild(content);
     const modalEl = document.querySelector('.modal');
     if (modalEl) {
-      modalEl.classList.remove('settings-modal');
+      // 清理所有已知的自定义模态框类，再按需添加新类
+      modalEl.classList.remove('settings-modal', 'scan-modal');
       if (modalClass) modalEl.classList.add(modalClass);
     }
     document.getElementById('modal-overlay').hidden = false;
@@ -213,7 +214,7 @@ const UI = {
   /** 关闭模态框 */
   closeModal() {
     const modalEl = document.querySelector('.modal');
-    if (modalEl) modalEl.classList.remove('settings-modal');
+    if (modalEl) modalEl.classList.remove('settings-modal', 'scan-modal');
     document.getElementById('modal-overlay').hidden = true;
   },
 

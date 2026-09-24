@@ -42,6 +42,13 @@ const DATA_DIR = app.isPackaged
 // 必须在 app ready 之前、任何 session 创建前调用。
 app.setPath('userData', path.join(DATA_DIR, 'user-data'));
 
+// 打包后禁用 GPU 合成：消除全屏透明置顶窗口（坐标拾取器）在 DWM 合成时 GPU 进程崩溃
+// 仅禁用合成层（保留 GPU 光栅化），主窗口 webview 文字/图片仍用 GPU 渲染，软件合成 60fps 无压力
+// 开发版不受影响（DevTools/未最大化主窗口使合成区域小，不触发崩溃）
+if (app.isPackaged) {
+  app.commandLine.appendSwitch('disable-gpu-compositing');
+}
+
 // 允许读写的数据文件白名单（防止渲染进程通过文件名参数访问任意文件）
 const ALLOWED_FILES = ['apps.json', 'events.json', 'settings.json', 'sign-tasks.json', 'bg-run.json', 'netease-cookie.json', 'netease-data.json', 'fire-spark-config.json', 'fire-spark-messages.json'];
 
@@ -855,20 +862,50 @@ function readImageDataUrl(filePath) {
 }
 
 /**
- * 选择本地图片作为快捷方式图标：弹出对话框 → 读取并转 data URL
+ * 选择本地图片或从可执行文件提取图标，作为快捷方式图标
+ * - 图片文件（png/jpg/ico 等）：读取并转 data URL
+ * - 可执行文件（.exe/.dll/.lnk）：用 app.getFileIcon 提取其图标转 data URL
+ *   （.lnk 先解析目标路径/自定义图标路径，类似 Windows 更改快捷方式图标）
  * @returns {Promise<{canceled: boolean, path?: string, success?: boolean, dataUrl?: string, message?: string}>}
  */
 ipcMain.handle('select-image', async (event) => {
   const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
   const result = await dialog.showOpenDialog(win, {
-    title: '选择图标图片',
+    title: '选择图标',
     properties: ['openFile'],
-    filters: [{ name: '图片文件', extensions: ['png', 'jpg', 'jpeg', 'gif', 'ico', 'webp', 'bmp', 'svg'] }]
+    filters: [
+      { name: '图片文件', extensions: ['png', 'jpg', 'jpeg', 'gif', 'ico', 'webp', 'bmp', 'svg'] },
+      { name: '可执行文件（提取图标）', extensions: ['exe', 'dll', 'lnk'] },
+      { name: '所有文件', extensions: ['*'] }
+    ]
   });
   if (result.canceled || result.filePaths.length === 0) {
     return { canceled: true };
   }
   const filePath = result.filePaths[0];
+  const ext = path.extname(filePath).toLowerCase();
+  // 从可执行文件 / .lnk 提取图标（类似 Windows 更改图标）
+  if (ext === '.exe' || ext === '.dll' || ext === '.lnk') {
+    try {
+      let iconSource = filePath;
+      // .lnk：优先用其自定义图标路径，否则解析目标路径
+      if (ext === '.lnk') {
+        const shortcut = shell.readShortcutLink(filePath);
+        iconSource = (shortcut.icon && fs.existsSync(shortcut.icon)) ? shortcut.icon : shortcut.target;
+      }
+      if (!iconSource || !fs.existsSync(iconSource)) {
+        return { canceled: false, path: filePath, success: false, message: '未找到可提取图标的文件' };
+      }
+      const img = await app.getFileIcon(iconSource, { size: 'large' });
+      if (img && !img.isEmpty()) {
+        return { canceled: false, path: filePath, success: true, dataUrl: img.toDataURL() };
+      }
+      return { canceled: false, path: filePath, success: false, message: '未能从该文件提取到图标' };
+    } catch (e) {
+      return { canceled: false, path: filePath, success: false, message: '提取图标失败：' + e.message };
+    }
+  }
+  // 普通图片文件：读取为 data URL
   const read = readImageDataUrl(filePath);
   return { canceled: false, path: filePath, ...read };
 });
@@ -889,6 +926,19 @@ ipcMain.handle('get-file-icon', async (event, filePath) => {
   // 纯命令名（不含路径分隔符）：用 where 解析完整路径，提高图标读取成功率
   if (!/[\\/]/.test(p)) {
     p = await resolveCommandPath(p);
+  }
+  // .lnk 快捷方式：解析目标路径，获取目标 .exe 的图标（而非 .lnk 默认图标）
+  if (/\.lnk$/i.test(p)) {
+    try {
+      const shortcut = shell.readShortcutLink(p);
+      const iconSource = (shortcut.icon && fs.existsSync(shortcut.icon)) ? shortcut.icon : shortcut.target;
+      if (iconSource && fs.existsSync(iconSource)) {
+        const img = await app.getFileIcon(iconSource, { size: 'large' });
+        if (img && !img.isEmpty()) return img.toDataURL();
+      }
+    } catch (e) {
+      // 解析失败：回退到直接用 .lnk 路径
+    }
   }
   try {
     const img = await app.getFileIcon(p, { size: 'large' });
@@ -912,6 +962,145 @@ function resolveCommandPath(cmd) {
     });
   });
 }
+
+// ======================== 扫描系统已安装软件 ========================
+// 纯 Node.js 扫描开始菜单 .lnk + reg.exe 读注册表，不依赖 PowerShell
+// （部分系统 PowerShell 被安全策略阻止，改用 Node fs + reg.exe 系统自带命令）
+
+/**
+ * 扫描开始菜单 .lnk 快捷方式（纯 Node.js fs 递归扫描，无外部依赖）
+ * .lnk 文件名作为软件名，.lnk 完整路径作为启动路径
+ * （start "" "xxx.lnk" 可正常启动目标程序，无需解析 TargetPath）
+ * @returns {Array<{name: string, path: string}>}
+ */
+function scanStartMenuShortcuts() {
+  const dirs = [
+    path.join(process.env.ProgramData || 'C:\\ProgramData', 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+    path.join(process.env.AppData || '', 'Microsoft', 'Windows', 'Start Menu', 'Programs')
+  ];
+  const results = [];
+  const scanDir = (dir) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (e) {
+      return;
+    }
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        scanDir(fullPath);
+      } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.lnk')) {
+        const name = entry.name.slice(0, -4);
+        results.push({ name, path: fullPath });
+      }
+    }
+  };
+  dirs.forEach(scanDir);
+  return results;
+}
+
+/**
+ * 扫描卸载注册表项（用 reg.exe 系统自带命令，非 PowerShell）
+ * 从 DisplayIcon 解析出 .exe 路径作为补充
+ * 读取 HKLM / HKLM WOW6432Node / HKCU 三个 Uninstall 根项
+ * @returns {Promise<Array<{name: string, path: string}>>}
+ */
+async function scanUninstallRegistry() {
+  const keys = [
+    'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
+    'HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
+    'HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall'
+  ];
+  const results = [];
+  for (const key of keys) {
+    const out = await new Promise((resolve) => {
+      exec('reg query "' + key + '" /s', { windowsHide: true, maxBuffer: 10 * 1024 * 1024, encoding: 'buffer' }, (error, stdout) => {
+        if (error || !Buffer.isBuffer(stdout)) return resolve('');
+        try {
+          resolve(new TextDecoder('gbk').decode(stdout));
+        } catch (e) {
+          resolve(stdout.toString('utf8'));
+        }
+      });
+    });
+    if (!out) continue;
+    const lines = out.split(/\r?\n/);
+    let name = '';
+    let icon = '';
+    const flush = () => {
+      if (name && icon) {
+        const iconPath = icon.split(',')[0].replace(/^"|"$/g, '').trim();
+        if (iconPath && /\.exe$/i.test(iconPath)) {
+          results.push({ name, path: iconPath });
+        }
+      }
+      name = '';
+      icon = '';
+    };
+    for (const line of lines) {
+      if (/^HKEY_/i.test(line)) {
+        flush();
+      } else if (line.trim()) {
+        const m = line.match(/^\s+(\S+)\s+REG_\S+\s+(.*)$/);
+        if (m) {
+          if (m[1] === 'DisplayName') name = m[2].trim();
+          else if (m[1] === 'DisplayIcon') icon = m[2].trim();
+        }
+      }
+    }
+    flush();
+  }
+  return results;
+}
+
+// 过滤规则：排除卸载/帮助等无用项，排除系统目录下的程序
+const SCAN_EXCLUDE_NAMES = /卸载|uninstall|remove|setup|help|readme|documentation|更新|update|installer/i;
+const SCAN_EXCLUDE_PATHS = /^[cC]:\\Windows\\(System32|SysWOW64)\\/i;
+
+/**
+ * 过滤并合并去重扫描结果
+ * 规则：只保留 .exe 和 .lnk；排除名称含卸载/帮助等；排除 System32 下；按路径去重；按名称排序
+ * @param {Array} startMenuApps 开始菜单扫描结果
+ * @param {Array} registryApps 注册表扫描结果
+ * @returns {Array<{name: string, path: string}>}
+ */
+function mergeAndDedupScanResults(startMenuApps, registryApps) {
+  const seen = new Set();
+  const result = [];
+  const add = (item) => {
+    if (!item || !item.name || !item.path) return;
+    const name = String(item.name).trim();
+    const p = String(item.path).trim();
+    if (!name || !p) return;
+    if (!/\.exe$/i.test(p) && !/\.lnk$/i.test(p)) return;
+    if (SCAN_EXCLUDE_NAMES.test(name)) return;
+    if (SCAN_EXCLUDE_PATHS.test(p)) return;
+    const key = p.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    result.push({ name, path: p });
+  };
+  startMenuApps.forEach(add);
+  registryApps.forEach(add);
+  return result.sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+}
+
+/**
+ * 扫描系统已安装软件（开始菜单 + 卸载注册表，合并去重）
+ * IPC 通道：scan-installed-apps
+ * @returns {Promise<{success: boolean, apps: Array<{name: string, path: string}>, message?: string}>}
+ */
+ipcMain.handle('scan-installed-apps', async () => {
+  try {
+    const startMenuApps = scanStartMenuShortcuts();
+    const registryApps = await scanUninstallRegistry();
+    const merged = mergeAndDedupScanResults(startMenuApps, registryApps);
+    return { success: true, apps: merged };
+  } catch (err) {
+    return { success: false, message: err.message || '扫描失败', apps: [] };
+  }
+});
 
 /**
  * 读取某个数据文件的内容
@@ -1963,10 +2152,24 @@ ipcMain.handle('sign:pick-coordinate', async () => {
     ipcMain.on('picker:cancel', onCancel);
 
     const win = createPickerWindow();
-    win.webContents.once('did-finish-load', () => {
-      win.show();
-      win.focus();
+    let shown = false;
+    const forceShow = () => {
+      if (shown) return;
+      shown = true;
+      if (win && !win.isDestroyed()) {
+        win.show();
+        win.focus();
+      }
+    };
+    win.webContents.once('did-finish-load', forceShow);
+    // 加载失败兜底：preload/asar 加载异常时页面脚本未绑定，用户无法点击/ESC，
+    // 直接按取消处理，避免透明置顶窗口"隐形盖屏"锁死整个桌面
+    win.webContents.once('did-fail-load', (e, errorCode, errorDescription) => {
+      console.error('[picker] 加载失败:', errorCode, errorDescription);
+      finish({ success: false, cancelled: true });
     });
+    // 超时兜底：3 秒内无论加载结果如何都强制 show，防止 did-finish-load 静默不触发
+    setTimeout(forceShow, 3000);
     // 兜底：窗口被意外关闭（如 Alt+F4）时按取消处理
     win.on('closed', () => finish({ success: false, cancelled: true }));
   });
