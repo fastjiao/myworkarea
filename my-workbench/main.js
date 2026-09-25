@@ -16,6 +16,7 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const https = require('https');
+const crypto = require('crypto');
 
 // node-schedule：每日定时续火花（可选依赖，未安装时降级为仅手动触发）
 let schedule;
@@ -1739,6 +1740,218 @@ ipcMain.handle('sign:execute-http', async (event, params) => {
     return { ok: true, statusCode: res.statusCode, body: res.body };
   } catch (err) {
     return { ok: false, error: err.message };
+  }
+});
+
+/**
+ * 打开签到登录窗口：加载接口同域首页，用户登录后 cookie 持久化到 sign session
+ * @param {{ url: string }} params 签到接口 URL（取其域名定位登录页）
+ */
+ipcMain.handle('sign:open-login', async (event, { url }) => {
+  try {
+    const hostname = new URL(url).hostname;
+    const loginUrl = 'https://' + hostname;
+    const win = getOrCreateSignWindow('login-' + hostname, loginUrl);
+    win.show();
+    win.focus();
+    return { success: true, loginUrl };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+});
+
+/**
+ * 抓取指定站点当前登录 cookie（用于一键登录后自动填写）
+ * @param {{ url: string }} params 签到接口 URL（按域名过滤 cookie）
+ */
+ipcMain.handle('sign:fetch-cookie', async (event, { url }) => {
+  try {
+    const hostname = new URL(url).hostname;
+    const all = await getSignSession().cookies.get({});
+    const matched = all.filter((c) => {
+      const d = String(c.domain).replace(/^\./, '');
+      return hostname === d || hostname.endsWith('.' + d);
+    });
+    return {
+      success: true,
+      cookie: matched.map((c) => c.name + '=' + c.value).join('; '),
+      count: matched.length
+    };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+});
+
+// =====================================================================
+// WPS 专用签到（RSA + AES 加密多步流程）
+// 原理：① GET 获取 RSA 公钥 → ② AES 加密用户数据 → ③ RSA 加密 AES 密钥
+//       → ④ POST 签到接口（带加密 token 头 + 加密请求体）
+// =====================================================================
+
+/**
+ * 生成随机 AES 密钥（22 位随机小写字母+数字 + 10 位时间戳 = 32 位）
+ * 与 Python 参考实现保持一致
+ */
+function _wpsGenerateAesKey(length = 32) {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let randomPart = '';
+  for (let i = 0; i < length - 10; i++) {
+    randomPart += chars[Math.floor(Math.random() * chars.length)];
+  }
+  const timestampPart = String(Math.floor(Date.now() / 1000));
+  return randomPart + timestampPart;
+}
+
+/**
+ * AES-256-CBC 加密（与 Python pycryptodome 实现兼容）
+ * - 密钥：UTF-8 编码后零填充到 32 字节
+ * - IV：AES 密钥前 16 个字符的 UTF-8 编码
+ * - 填充：PKCS7（Node.js crypto 默认）
+ * 返回 Base64 编码的密文
+ */
+function _wpsAesEncrypt(plainText, aesKey) {
+  const keyBuffer = Buffer.alloc(32, 0);
+  Buffer.from(aesKey, 'utf-8').copy(keyBuffer);
+  const iv = Buffer.from(aesKey.slice(0, 16), 'utf-8');
+  const cipher = crypto.createCipheriv('aes-256-cbc', keyBuffer, iv);
+  const encrypted = Buffer.concat([cipher.update(plainText, 'utf-8'), cipher.final()]);
+  return encrypted.toString('base64');
+}
+
+/**
+ * RSA-PKCS1v15 加密
+ * @param {string} plainText 待加密明文（AES 密钥）
+ * @param {string} publicKeyPem PEM 格式的 RSA 公钥
+ * 返回 Base64 编码的密文
+ */
+function _wpsRsaEncrypt(plainText, publicKeyPem) {
+  const encrypted = crypto.publicEncrypt(
+    { key: publicKeyPem, padding: crypto.constants.RSA_PKCS1_PADDING },
+    Buffer.from(plainText, 'utf-8')
+  );
+  return encrypted.toString('base64');
+}
+
+/**
+ * 从 Cookie 字符串中提取 uid 字段值（WPS 用户 ID）
+ */
+function _wpsExtractUid(cookieStr) {
+  const match = String(cookieStr).match(/(?:^|;\s*)uid=(\d+)/);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+/**
+ * WPS 签到完整流程
+ * @param {string} cookie 完整的 WPS 登录 Cookie（需含 uid 字段）
+ * @returns {{ok: boolean, message?: string, alreadySigned?: boolean}}
+ */
+async function wpsSignIn(cookie) {
+  const baseHeaders = {
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'accept': 'application/json, text/plain, */*',
+    'accept-language': 'zh-CN,zh;q=0.9',
+    'content-type': 'application/json',
+    'origin': 'https://personal-act.wps.cn',
+    'referer': 'https://personal-act.wps.cn/',
+    'cookie': cookie || ''
+  };
+
+  // ① 提取 user_id
+  const userId = _wpsExtractUid(cookie);
+  if (!userId) {
+    return { ok: false, message: 'Cookie 中未找到 uid 字段，请重新登录' };
+  }
+
+  // ② GET 获取 RSA 公钥
+  const keyRes = await signHttpRequest({
+    url: 'https://personal-bus.wps.cn/sign_in/v1/encrypt/key',
+    method: 'GET',
+    headers: baseHeaders
+  });
+  if (keyRes.error || keyRes.statusCode !== 200) {
+    return { ok: false, message: '获取加密公钥失败：' + (keyRes.error || 'HTTP ' + keyRes.statusCode) };
+  }
+  let keyData;
+  try {
+    keyData = JSON.parse(keyRes.body);
+  } catch (e) {
+    return { ok: false, message: '公钥响应非 JSON' };
+  }
+  if (keyData.result !== 'ok' || !keyData.data) {
+    return { ok: false, message: '公钥接口返回异常：' + (keyData.msg || '') };
+  }
+  const publicKeyPem = Buffer.from(keyData.data, 'base64').toString('utf-8');
+
+  // ③ 生成 AES 密钥 + 加密用户数据 + RSA 加密 AES 密钥
+  const aesKey = _wpsGenerateAesKey(32);
+  const plainData = JSON.stringify({ user_id: userId, platform: 64 });
+  const extra = _wpsAesEncrypt(plainData, aesKey);
+  const token = _wpsRsaEncrypt(aesKey, publicKeyPem);
+
+  // ④ POST 签到
+  const signInRes = await signHttpRequest({
+    url: 'https://personal-bus.wps.cn/sign_in/v1/sign_in',
+    method: 'POST',
+    headers: { ...baseHeaders, token },
+    body: JSON.stringify({ encrypt: true, extra, pay_origin: 'pc_ucs_rwzx_sign' })
+  });
+  if (signInRes.error) {
+    return { ok: false, message: '签到请求失败：' + signInRes.error };
+  }
+  if (signInRes.statusCode !== 200) {
+    return { ok: false, message: 'HTTP ' + signInRes.statusCode };
+  }
+
+  let signInData;
+  try {
+    signInData = JSON.parse(signInRes.body);
+  } catch (e) {
+    return { ok: false, message: '签到响应非 JSON' };
+  }
+
+  if (signInData.result === 'ok') {
+    return { ok: true, message: '签到成功' };
+  }
+  // 已签到
+  if (signInData.msg === 'has sign') {
+    return { ok: true, message: '今日已签到', alreadySigned: true };
+  }
+  // 未登录
+  if (signInData.ext_msg === 'userNotLogin') {
+    return { ok: false, message: '登录态已过期，请重新登录' };
+  }
+  return { ok: false, message: signInData.msg || '签到失败' };
+}
+
+/**
+ * 执行 WPS 专用签到
+ */
+ipcMain.handle('sign:wps-sign', async (event, { cookie }) => {
+  try {
+    if (!cookie) return { ok: false, message: '缺少 Cookie，请先一键登录' };
+    return await wpsSignIn(cookie);
+  } catch (err) {
+    return { ok: false, message: err.message };
+  }
+});
+
+/**
+ * 抓取所有 .wps.cn 域名的 Cookie（WPS 签到需要跨子域 Cookie）
+ */
+ipcMain.handle('sign:fetch-cookie-wps', async () => {
+  try {
+    const all = await getSignSession().cookies.get({});
+    const matched = all.filter((c) => {
+      const d = String(c.domain).replace(/^\./, '');
+      return d.endsWith('wps.cn');
+    });
+    return {
+      success: true,
+      cookie: matched.map((c) => c.name + '=' + c.value).join('; '),
+      count: matched.length
+    };
+  } catch (err) {
+    return { success: false, message: err.message };
   }
 });
 

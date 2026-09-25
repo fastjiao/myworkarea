@@ -147,6 +147,33 @@ contextBridge.exposeInMainWorld('workbench', {
    */
   executeHttpSign: (params) => ipcRenderer.invoke('sign:execute-http', params),
 
+  /**
+   * 打开网页登录窗口（登录后 cookie 持久化，供一键抓取）
+   * @param {{ url: string }} params 签到接口 URL
+   * @returns {Promise<{success: boolean, loginUrl?: string, message?: string}>}
+   */
+  openSignLogin: (params) => ipcRenderer.invoke('sign:open-login', params),
+
+  /**
+   * 抓取指定站点当前登录 cookie
+   * @param {{ url: string }} params 签到接口 URL
+   * @returns {Promise<{success: boolean, cookie?: string, count?: number, message?: string}>}
+   */
+  fetchSignCookie: (params) => ipcRenderer.invoke('sign:fetch-cookie', params),
+
+  /**
+   * 执行 WPS 专用签到（RSA+AES 加密多步流程）
+   * @param {{ cookie: string }} params 完整 WPS 登录 Cookie
+   * @returns {Promise<{ok: boolean, message?: string, alreadySigned?: boolean}>}
+   */
+  executeWpsSign: (params) => ipcRenderer.invoke('sign:wps-sign', params),
+
+  /**
+   * 抓取所有 .wps.cn 域名的 Cookie（WPS 跨子域 Cookie）
+   * @returns {Promise<{success: boolean, cookie?: string, count?: number, message?: string}>}
+   */
+  fetchSignCookieWps: () => ipcRenderer.invoke('sign:fetch-cookie-wps'),
+
   // ======================== 网易云音乐 ========================
 
   /**
