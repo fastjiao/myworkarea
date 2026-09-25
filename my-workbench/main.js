@@ -15,6 +15,7 @@ const { exec, fork } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
+const https = require('https');
 
 // node-schedule：每日定时续火花（可选依赖，未安装时降级为仅手动触发）
 let schedule;
@@ -1653,6 +1654,92 @@ ipcMain.handle('sign:save-tasks', async (event, tasks) => {
 
 ipcMain.handle('sign:load-tasks', async () => {
   return readData('sign-tasks.json');
+});
+
+// ---------------------------------------------------------------------
+// 网页签到（HTTP 接口请求：Cookie + 直接请求签到接口）
+// 用 Node 原生 http/https，不依赖浏览器，规避渲染进程跨域限制。
+// ---------------------------------------------------------------------
+
+/**
+ * 通用 HTTP 请求（GET / POST，返回结构化结果）
+ * @param {{ url: string, method?: string, headers?: object, body?: string, timeout?: number }} params
+ * @returns {Promise<{statusCode?: number, body?: string, error?: string}>}
+ */
+function signHttpRequest({ url, method, headers, body, timeout }) {
+  return new Promise((resolve) => {
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch (e) {
+      resolve({ error: '无效的 URL：' + e.message });
+      return;
+    }
+    const lib = parsed.protocol === 'https:' ? https : http;
+    const methodUpper = (method || 'GET').toUpperCase();
+    const reqHeaders = headers || {};
+
+    const req = lib.request(parsed, {
+      method: methodUpper,
+      headers: reqHeaders,
+      timeout: timeout || 15000
+    }, (res) => {
+      let data = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => resolve({ statusCode: res.statusCode, body: data }));
+    });
+
+    req.on('timeout', () => req.destroy(new Error('请求超时')));
+    req.on('error', (err) => resolve({ error: err.message }));
+
+    if (body && methodUpper !== 'GET') req.write(body);
+    req.end();
+  });
+}
+
+/**
+ * 执行一次 HTTP 接口签到（请求体按内容自动判定 Content-Type）
+ */
+ipcMain.handle('sign:execute-http', async (event, params) => {
+  try {
+    const { url, method, cookie, extraHeaders, body } = params || {};
+    if (!url) return { ok: false, error: '缺少接口 URL' };
+
+    const headers = {
+      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'accept': '*/*',
+      'accept-language': 'zh-CN,zh;q=0.9'
+    };
+    if (cookie) headers['cookie'] = cookie;
+
+    // 请求体：以 { 开头视为 JSON，否则视为表单
+    if (body) {
+      if (String(body).trim().startsWith('{')) {
+        headers['content-type'] = 'application/json; charset=UTF-8';
+      } else {
+        headers['content-type'] = 'application/x-www-form-urlencoded; charset=UTF-8';
+      }
+    }
+
+    // 额外请求头（每行 "Key: Value"，可覆盖默认头如 user-agent）
+    if (extraHeaders) {
+      String(extraHeaders).split(/\r?\n/).forEach((line) => {
+        const idx = line.indexOf(':');
+        if (idx > 0) {
+          const k = line.slice(0, idx).trim();
+          const v = line.slice(idx + 1).trim();
+          if (k) headers[k.toLowerCase()] = v;
+        }
+      });
+    }
+
+    const res = await signHttpRequest({ url, method, headers, body });
+    if (res.error) return { ok: false, error: res.error };
+    return { ok: true, statusCode: res.statusCode, body: res.body };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 });
 
 // ---------------------------------------------------------------------

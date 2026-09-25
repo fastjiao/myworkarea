@@ -140,6 +140,13 @@ contextBridge.exposeInMainWorld('workbench', {
   /** 加载签到任务列表 */
   loadSignTasks: () => ipcRenderer.invoke('sign:load-tasks'),
 
+  /**
+   * HTTP 接口签到：主进程代理发起请求（规避渲染进程跨域限制）
+   * @param {{ url: string, method?: string, cookie?: string, extraHeaders?: string, body?: string }} params
+   * @returns {Promise<{ok: boolean, statusCode?: number, body?: string, error?: string}>}
+   */
+  executeHttpSign: (params) => ipcRenderer.invoke('sign:execute-http', params),
+
   // ======================== 网易云音乐 ========================
 
   /**
