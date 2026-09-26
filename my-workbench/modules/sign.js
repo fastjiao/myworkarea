@@ -8,6 +8,7 @@
 window.Sign = {
   _tasks: [],
   _running: {},
+  _results: {},
 
   // -------------------------------------------------------------------
   async init() {
@@ -102,8 +103,8 @@ window.Sign = {
       card.appendChild(UI.el('div', 'sign-meta', '上次签到：' + task.lastSignDate));
     }
 
-    if (this._running[task.id]?.message) {
-      const msg = this._running[task.id];
+    if (this._results[task.id]) {
+      const msg = this._results[task.id];
       const el = UI.el('div', 'sign-result ' + (msg.success ? 'ok' : 'fail'));
       el.textContent = (msg.success ? '✓ ' : '✗ ') + msg.message;
       card.appendChild(el);
@@ -134,14 +135,18 @@ window.Sign = {
   // -------------------------------------------------------------------
   async _doSign(task) {
     if (this._running[task.id]) return;
+    // 今日已签到（lastSignDate 持久化于 data/sign-tasks.json）：不重复请求
+    if (task.lastSignDate === DateUtil.today()) {
+      UI.setToast(`「${task.name}」今日已签到，无需重复签到`, 'info');
+      return;
+    }
     this._running[task.id] = { success: false, message: '' };
     this.render();
 
     UI.setToast(`正在签到「${task.name}」...`, 'info');
 
+    let verdict;
     try {
-      let verdict;
-
       // WPS 专用签到（RSA+AES 加密多步流程）
       if (task.taskType === 'wps') {
         const res = await window.workbench.executeWpsSign({ cookie: task.cookie || '' });
@@ -161,8 +166,6 @@ window.Sign = {
         verdict = this._judge(task, res);
       }
 
-      this._running[task.id] = { success: verdict.success, message: verdict.message };
-
       if (verdict.success) {
         task.lastSignDate = DateUtil.today();
         await this._persist();
@@ -171,9 +174,19 @@ window.Sign = {
         UI.setToast(`「${task.name}」签到失败：${verdict.message}`, 'error');
       }
     } catch (err) {
-      this._running[task.id] = { success: false, message: '异常：' + err.message };
+      verdict = { success: false, message: '异常：' + err.message };
       UI.setToast('签到异常：' + err.message, 'error');
     }
+
+    // 签到结束：移除"签到中"状态，结果转入 _results 展示（15 秒后自动清除）
+    delete this._running[task.id];
+    this._results[task.id] = verdict;
+    setTimeout(() => {
+      if (this._results[task.id]) {
+        delete this._results[task.id];
+        this.render();
+      }
+    }, 15000);
 
     this.render();
   },
@@ -221,7 +234,14 @@ window.Sign = {
 
   // -------------------------------------------------------------------
   async _signAll() {
-    for (const task of this._tasks) {
+    // 跳过今日已签的任务（lastSignDate 持久化记录）
+    const today = DateUtil.today();
+    const pending = this._tasks.filter((t) => t.lastSignDate !== today);
+    if (pending.length === 0) {
+      UI.setToast('所有任务今日均已签到', 'info');
+      return;
+    }
+    for (const task of pending) {
       await this._doSign(task);
       await new Promise(r => setTimeout(r, 500));
     }

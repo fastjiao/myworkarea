@@ -190,12 +190,12 @@ window.Netease = {
       signinBtn.addEventListener('click', () => this._dailySignin());
     }
     right.appendChild(signinBtn);
-    // 打卡按钮
+    // 打卡按钮（已打卡以持久化的 _dakaLastDate 为准，重启后仍显示已打卡）
     const dakaBtn = UI.el('button', 'btn btn-sm netease-btn netease-topbar-action');
     if (this._dakaStatus === 'running') {
       dakaBtn.textContent = '打卡中 ' + this._dakaProgress + '/' + this._dakaTarget;
       dakaBtn.disabled = true;
-    } else if (this._dakaStatus === 'success') {
+    } else if (this._dakaStatus === 'success' || this._dakaLastDate === DateUtil.today()) {
       dakaBtn.textContent = '已打卡';
       dakaBtn.disabled = true;
       dakaBtn.classList.add('netease-btn-done');
@@ -458,7 +458,7 @@ window.Netease = {
     dakaInput.addEventListener('input', (e) => { this._dakaTarget = Math.min(300, Math.max(1, parseInt(e.target.value) || 300)); });
     dakaRow.appendChild(dakaInput);
     dakaCard.appendChild(dakaRow);
-    // 打卡进度/状态
+    // 打卡进度/状态（已打卡日期以 _dakaLastDate 持久化记录为准，重启后同样不重复打卡）
     if (this._dakaStatus === 'running') {
       const progress = UI.el('div', 'netease-progress-wrap');
       const bar = UI.el('div', 'netease-progress-bar');
@@ -468,16 +468,24 @@ window.Netease = {
       progress.appendChild(bar);
       progress.appendChild(UI.el('div', 'netease-progress-text', this._dakaProgress + ' / ' + this._dakaTarget));
       dakaCard.appendChild(progress);
-    } else if (this._dakaStatus === 'success') {
-      dakaCard.appendChild(UI.el('div', 'netease-tool-status success', this._dakaMsg || '打卡完成'));
+    } else if (this._dakaStatus === 'success' || this._dakaLastDate === DateUtil.today()) {
+      dakaCard.appendChild(UI.el('div', 'netease-tool-status success',
+        (this._dakaStatus === 'success' && this._dakaMsg) ? this._dakaMsg : '今日已打卡'));
     } else if (this._dakaStatus === 'failed') {
       dakaCard.appendChild(UI.el('div', 'netease-tool-status failed', this._dakaMsg || '打卡失败'));
     }
     // 打卡按钮
     const dakaActions = UI.el('div', 'netease-actions');
     const dakaBtn = UI.el('button', 'btn btn-sm netease-btn');
-    dakaBtn.textContent = this._dakaStatus === 'running' ? '打卡中…' : '开始打卡';
-    dakaBtn.disabled = this._dakaStatus === 'running';
+    const dakaDoneToday = this._dakaLastDate === DateUtil.today();
+    if (this._dakaStatus === 'running') {
+      dakaBtn.textContent = '打卡中…';
+    } else if (dakaDoneToday) {
+      dakaBtn.textContent = '已打卡';
+    } else {
+      dakaBtn.textContent = '开始打卡';
+    }
+    dakaBtn.disabled = this._dakaStatus === 'running' || dakaDoneToday;
     dakaBtn.addEventListener('click', () => this._daka());
     dakaActions.appendChild(dakaBtn);
     dakaCard.appendChild(dakaActions);
@@ -1137,9 +1145,11 @@ window.Netease = {
         this._likedPlaylistId = plId;
         const tRes = await this._api('/playlist/track/all', { id: plId, limit: this._pageSize, offset: 0, timestamp: Date.now() });
         // 记算总数（用于判断是否还有更多 + 状态行展示）
+        // 注意：该接口响应可能缺 playlistTrackCount 字段，此时优先用 likelist 数量（准确），
+        // 不能用 songs.length（首屏页大小 30），否则总数错记为 30 导致后续不再加载
         this._playlistTotal = (tRes.playlistTrackCount) || (tRes.data && tRes.data.playlistTrackCount) || 0;
         const songs = tRes.songs || (tRes.data && tRes.data.songs) || [];
-        if (!this._playlistTotal) this._playlistTotal = songs.length;
+        if (!this._playlistTotal) this._playlistTotal = this._likedListCount || songs.length;
         return this._mapSongs(songs);
       })();
       const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 20000));
@@ -1175,7 +1185,10 @@ window.Netease = {
   // 滚动到底时加载下一页并增量追加行（不全量 render，避免 100+ 行重排）
   async _loadMorePlaylist() {
     if (this._loadingMore || !this._likedPlaylistId) return;
-    if (this._playlistTotal && this._playlist.length >= this._playlistTotal) return;
+    // 双重保险：总数取 playlistTrackCount 与 likelist 数量的较大者，
+    // 避免接口缺 playlistTrackCount 时误判"已加载完"
+    const total = Math.max(this._playlistTotal || 0, this._likedListCount || 0);
+    if (total && this._playlist.length >= total) return;
     this._loadingMore = true;
     this._updateLoadMoreStatus();
     try {
@@ -1591,6 +1604,13 @@ window.Netease = {
   // 打卡听歌（模拟播放指定数量的歌曲，刷每日听歌量）
   async _daka() {
     if (this._dakaStatus === 'running') return;
+    // 同一天已打卡（_dakaLastDate 持久化于 data/netease-data.json）：不重复提交
+    if (this._dakaLastDate === DateUtil.today()) {
+      this._dakaStatus = 'success';
+      this._dakaMsg = '今日已打卡';
+      this.render();
+      return;
+    }
     this._dakaStatus = 'running';
     this._dakaProgress = 0;
     this._dakaMsg = '';
@@ -1643,6 +1663,8 @@ window.Netease = {
       this._dakaStatus = 'success';
       this._dakaMsg = '打卡完成，共刷 ' + this._dakaProgress + ' 首';
       this._dakaLastDate = DateUtil.today();
+      // 立即持久化打卡日期到 data/netease-data.json，重启后不重复打卡
+      this._saveLocalData();
       UI.setToast('打卡完成！共刷 ' + this._dakaProgress + ' 首', 'success');
     } catch (err) {
       this._dakaStatus = 'failed';
