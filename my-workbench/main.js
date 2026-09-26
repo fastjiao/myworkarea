@@ -1270,6 +1270,30 @@ ipcMain.handle('open-url', async (event, url) => {
   }
 });
 
+// 抖音外壳截图保存：接收 data URL，解码为 PNG 写入 data/screenshots/，并打开所在文件夹
+ipcMain.handle('douyin:save-screenshot', async (event, dataUrl) => {
+  try {
+    if (!dataUrl || typeof dataUrl !== 'string') {
+      return { success: false, message: '截图数据为空' };
+    }
+    const m = /^data:image\/png;base64,(.*)$/.exec(dataUrl);
+    if (!m) return { success: false, message: '截图格式无效' };
+    const buf = Buffer.from(m[1], 'base64');
+    const shotDir = path.join(DATA_DIR, 'screenshots');
+    if (!fs.existsSync(shotDir)) fs.mkdirSync(shotDir, { recursive: true });
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const filename = `douyin-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.png`;
+    const filePath = path.join(shotDir, filename);
+    fs.writeFileSync(filePath, buf);
+    // 在文件管理器中定位并选中该文件，方便用户查看
+    shell.showItemInFolder(filePath);
+    return { success: true, filename: filename };
+  } catch (err) {
+    return { success: false, message: `保存失败：${err.message}` };
+  }
+});
+
 /**
  * 获取网页快捷方式的默认图标（网站 Favicon）
  * 说明：渲染进程的 CSP 限制 img-src 只能加载本地 / data:，因此由主进程

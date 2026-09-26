@@ -31,6 +31,13 @@ contextBridge.exposeInMainWorld('workbench', {
   openUrl: (url) => ipcRenderer.invoke('open-url', url),
 
   /**
+   * 保存抖音 webview 截图（PNG）到 data/screenshots/ 并在文件管理器中定位
+   * @param {string} dataUrl 截图的 data URL（data:image/png;base64,...）
+   * @returns {Promise<{success: boolean, filename?: string, message?: string}>}
+   */
+  saveScreenshot: (dataUrl) => ipcRenderer.invoke('douyin:save-screenshot', dataUrl),
+
+  /**
    * 弹出系统文件选择对话框，让用户选择文件或文件夹
    * @param {'file'|'folder'} kind 选择类型：'folder' 选文件夹，其它选文件
    * @returns {Promise<{canceled: boolean, path?: string}>} 选择结果

@@ -409,6 +409,107 @@ body {
 }
 
 /* ---------------------------------------------------------------------
+   抖音 webview 自定义外壳工具栏（modules/douyin-shell.js 渲染）
+   布局：#page-douyin 激活时改为纵向 flex → 工具栏在上(40px) + webview 在下(flex:1)
+   风格：浅色简约白底软灰圆角，颜色全部走 CSS 变量，自动适配明暗主题
+   --------------------------------------------------------------------- */
+/* 抖音页激活时改为纵向 flex（仅影响 #page-douyin，不影响 #page-qwen） */
+#page-douyin.active {
+  flex-direction: column;
+}
+
+.douyin-toolbar {
+  flex: 0 0 40px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border);
+  box-sizing: border-box;
+}
+
+/* 左侧导航按钮组 / 右侧工具按钮组 */
+.dy-nav-group,
+.dy-tool-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* 单个图标按钮 */
+.dy-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-sub);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.dy-btn:hover {
+  background: var(--hover-bg);
+  color: var(--text);
+}
+.dy-btn:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.dy-btn:disabled:hover {
+  background: transparent;
+}
+
+/* 中间地址栏 */
+.dy-addr-wrap {
+  flex: 1;
+  min-width: 0;
+  margin: 0 6px;
+}
+.dy-addr-input {
+  width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--hover-bg);
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s, background 0.15s;
+}
+.dy-addr-input:focus {
+  border-color: var(--primary);
+  background: var(--card-bg);
+}
+
+/* 透明度滑块 */
+.dy-opacity-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.dy-opacity-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  user-select: none;
+}
+.dy-opacity-slider {
+  width: 70px;
+  height: 4px;
+  cursor: pointer;
+  accent-color: var(--primary);
+}
+
+/* ---------------------------------------------------------------------
    通用标题、分区、按钮
    --------------------------------------------------------------------- */
 .section-title {

@@ -93,8 +93,10 @@
         <section id="page-calendar" class="page"></section>
         <section id="page-sign" class="page"></section>
         <section id="page-netease" class="page"></section>
-        <!-- 抖音：主窗口内嵌 webview（data-src 懒加载，首次切到该页才真正加载；由 renderer.js 设置 src） -->
+        <!-- 抖音：主窗口内嵌 webview（data-src 懒加载，首次切到该页才真正加载；由 renderer.js 设置 src）。
+             上方 #douyin-toolbar 为自定义外壳工具栏（由 modules/douyin-shell.js 渲染），下方 webview 保留原样。 -->
         <section id="page-douyin" class="page page-embed">
+          <div id="douyin-toolbar" class="douyin-toolbar"></div>
           <webview id="webview-douyin" class="webview-box" data-src="https://www.douyin.com/"></webview>
         </section>
         <!-- 千问：内嵌 webview（独立 partition 持久化登录态，桌面 UA 保证网页版可用） -->
@@ -164,6 +166,7 @@
   <script src="modules/calendar.js"></script>
   <script src="modules/sign.js"></script>
   <script src="modules/netease.js"></script>
+  <script src="modules/douyin-shell.js"></script>
   <script src="modules/clock.js"></script>
   <script src="modules/settings.js"></script>
   <script src="renderer.js"></script>

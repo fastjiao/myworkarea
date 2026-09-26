@@ -495,6 +495,9 @@ async function init() {
   PAGE_MODULES.sign = window.Sign;
   PAGE_MODULES.netease = window.Netease;
 
+  // 4.1 初始化抖音 webview 外壳工具栏（构建按钮 + 绑定 webview 导航事件）
+  if (window.DouyinShell) window.DouyinShell.init();
+
   // 5. 绑定导航点击（抖音/千问为内嵌 webview 虚拟页面，走 switchPage 切换）
   document.querySelectorAll('.nav-item').forEach((btn) => {
     btn.addEventListener('click', () => {
