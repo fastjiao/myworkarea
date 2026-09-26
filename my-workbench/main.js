@@ -1294,6 +1294,54 @@ ipcMain.handle('douyin:save-screenshot', async (event, dataUrl) => {
   }
 });
 
+// 检测系统 Edge / Chrome 可执行文件路径（结果缓存，避免每次点击重复磁盘检测）
+const _browserExeCache = {};
+function findBrowserExe(name) {
+  if (name in _browserExeCache) return _browserExeCache[name];
+  const os = require('os');
+  const candidates = name === 'edge' ? [
+    'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+    'C:/Program Files/Microsoft/Edge/Application/msedge.exe'
+  ] : [
+    'C:/Program Files/Google/Chrome/Application/chrome.exe',
+    'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
+    path.join(os.homedir(), 'AppData/Local/Google/Chrome/Application/chrome.exe')
+  ];
+  let found = null;
+  for (const p of candidates) {
+    try { if (fs.existsSync(p)) { found = p; break; } } catch (e) {}
+  }
+  _browserExeCache[name] = found;
+  return found;
+}
+
+// 浏览器启动器：用系统 Edge / Chrome / 默认浏览器打开指定 URL
+ipcMain.handle('browser:open-in', async (event, { browser, url }) => {
+  try {
+    if (!url || typeof url !== 'string') return { success: false, message: '网址为空' };
+    let exe = null, name = '默认浏览器';
+    if (browser === 'edge') {
+      exe = findBrowserExe('edge');
+      name = 'Edge';
+    } else if (browser === 'chrome') {
+      exe = findBrowserExe('chrome');
+      name = 'Chrome';
+    }
+    if (exe) {
+      // detached + unref：让浏览器独立于本进程运行，本应用退出不影响它
+      const child = require('child_process').spawn(exe, [url], { detached: true, stdio: 'ignore' });
+      child.on('error', (e) => console.error('[browser:open-in] spawn 失败:', exe, e.message));
+      child.unref();
+      return { success: true, name };
+    }
+    // 未指定浏览器或未找到 Edge/Chrome，回退系统默认浏览器
+    await shell.openExternal(url);
+    return { success: true, name: '默认浏览器' };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+});
+
 /**
  * 获取网页快捷方式的默认图标（网站 Favicon）
  * 说明：渲染进程的 CSP 限制 img-src 只能加载本地 / data:，因此由主进程

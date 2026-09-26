@@ -323,12 +323,8 @@ function switchPage(pageName) {
   if (mod && typeof mod.render === 'function') {
     mod.render();
   }
-  // 内嵌 webview 懒加载：
-  // - 浏览器（多标签）：首次切到该页才创建首个标签，避免启动即请求网络
-  // - 千问：首次切到该页才真正加载对应网站，同时注入协议拦截 preload
-  if (pageName === 'browser') {
-    if (window.Browser) window.Browser.activate();
-  } else if (pageName === 'qwen') {
+  // 内嵌 webview 懒加载：千问首次切到该页才真正加载对应网站，同时注入协议拦截 preload
+  if (pageName === 'qwen') {
     const wv = document.getElementById('webview-' + pageName);
     if (wv && !wv.getAttribute('src')) {
       wv.setAttribute('preload', webviewPreloadUrl());
@@ -497,9 +493,6 @@ async function init() {
   PAGE_MODULES.calendar = window.Calendar;
   PAGE_MODULES.sign = window.Sign;
   PAGE_MODULES.netease = window.Netease;
-
-  // 4.1 初始化多标签浏览器骨架（首次切到该页才创建标签）
-  if (window.Browser) window.Browser.init();
 
   // 5. 绑定导航点击（抖音/千问为内嵌 webview 虚拟页面，走 switchPage 切换）
   document.querySelectorAll('.nav-item').forEach((btn) => {

@@ -38,6 +38,13 @@ contextBridge.exposeInMainWorld('workbench', {
   saveScreenshot: (dataUrl) => ipcRenderer.invoke('douyin:save-screenshot', dataUrl),
 
   /**
+   * 用系统浏览器（Edge/Chrome/默认）打开指定 URL
+   * @param {{browser: 'edge'|'chrome'|'default', url: string}} params
+   * @returns {Promise<{success: boolean, name?: string, message?: string}>}
+   */
+  openInBrowser: (params) => ipcRenderer.invoke('browser:open-in', params),
+
+  /**
    * 弹出系统文件选择对话框，让用户选择文件或文件夹
    * @param {'file'|'folder'} kind 选择类型：'folder' 选文件夹，其它选文件
    * @returns {Promise<{canceled: boolean, path?: string}>} 选择结果

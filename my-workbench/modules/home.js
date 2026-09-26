@@ -155,23 +155,52 @@ window.Home = {
 
     const title = UI.el('div', 'section-title');
     title.appendChild(UI.el('span', '', '网页快捷方式'));
-    // 搜索框 + 搜索按钮（输入回车或点击按钮跳转浏览器搜索）
+    // 浏览器启动器搜索框：输入网址/搜索词，选择 Edge/Chrome/默认浏览器打开
     const searchBox = UI.el('div', 'web-search-box');
     const searchInput = UI.el('input', 'web-search-input');
     searchInput.type = 'text';
-    searchInput.placeholder = '搜索…';
-    const doSearch = () => {
-      const q = searchInput.value.trim();
-      if (!q) return;
-      window.workbench.openUrl('https://www.baidu.com/s?wd=' + encodeURIComponent(q));
+    searchInput.placeholder = '输入网址或搜索词…';
+    // 解析输入：含协议头直接用；含点无空格视为域名补 https://；其余走 Bing 国际版搜索
+    const resolveUrl = () => {
+      const s = searchInput.value.trim();
+      if (!s) return null;
+      if (/^https?:\/\//i.test(s)) return s;
+      if (/^[^\s]+\.[^\s]+$/.test(s)) return 'https://' + s;
+      return 'https://www.bing.com/search?q=' + encodeURIComponent(s) + '&setmkt=en-US&setlang=en-US&cc=US';
     };
-    searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
+    const openIn = (browser) => {
+      const url = resolveUrl();
+      if (!url) { UI.toast('请输入网址或搜索词', 'error'); return; }
+      window.workbench.openInBrowser({ browser, url }).then((res) => {
+        if (res && res.success) UI.toast('已用 ' + (res.name || browser) + ' 打开', 'success');
+        else UI.toast('打开失败：' + (res && res.message), 'error');
+      });
+    };
+    // 默认浏览器按钮（搜索图标，和输入框拼接成一组）
     const searchBtn = UI.el('button', 'web-search-btn');
     searchBtn.innerHTML = window.svgIcon('search-bold', 18);
-    searchBtn.title = '搜索';
-    searchBtn.addEventListener('click', doSearch);
+    searchBtn.title = '用默认浏览器打开';
+    // Edge / Chrome 独立按钮
+    const edgeBtn = UI.el('button', 'web-browser-btn');
+    edgeBtn.textContent = 'Edge';
+    edgeBtn.title = '用 Edge 打开';
+    const chromeBtn = UI.el('button', 'web-browser-btn');
+    chromeBtn.textContent = 'Chrome';
+    chromeBtn.title = '用 Chrome 打开';
+    // 高亮当前选中的浏览器按钮（即时视觉反馈）
+    const browserBtns = [searchBtn, edgeBtn, chromeBtn];
+    const setActiveBtn = (btn) => {
+      browserBtns.forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+    };
+    searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); setActiveBtn(searchBtn); openIn('default'); } });
+    searchBtn.addEventListener('click', () => { setActiveBtn(searchBtn); openIn('default'); });
+    edgeBtn.addEventListener('click', () => { setActiveBtn(edgeBtn); openIn('edge'); });
+    chromeBtn.addEventListener('click', () => { setActiveBtn(chromeBtn); openIn('chrome'); });
     searchBox.appendChild(searchInput);
     searchBox.appendChild(searchBtn);
+    searchBox.appendChild(edgeBtn);
+    searchBox.appendChild(chromeBtn);
     title.appendChild(searchBox);
     const addBtn = UI.el('button', 'btn btn-primary btn-sm');
     addBtn.appendChild(UI.icon('plus', 14));
