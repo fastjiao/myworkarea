@@ -2692,6 +2692,50 @@ app.whenReady().then(() => {
     } catch (e) { console.warn('注册协议失败:', p, e.message); }
   });
   initDataDir();
+
+  // 必应国际版：默认 session 加请求拦截，尽量打开国际版而非中国版(cn.bing.com)
+  // 1) 主框架导航到 cn.bing.com 时改写回国际版 URL（对抗中国 IP 的 302 重定向）
+  // 2) bing.com 请求加 Accept-Language: en-US，影响地域判断
+  // 说明：若 Bing 服务器无视 cc=US 仍强制重定向，Chromium 会在多次重定向后报错而非无限循环
+  const BING_INTL_URL = 'https://www.bing.com/?setmkt=en-US&setlang=en-US&cc=US';
+  const bingSession = session.defaultSession;
+  // 把默认 session 的 User-Agent 改为纯 Chrome UA（去掉 Electron 字样），
+  // 避免 Bing 等站点识别为自动化工具触发人机验证(CAPTCHA)
+  const chromeVer = process.versions.chrome || '130.0.0.0';
+  bingSession.setUserAgent(
+    `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVer} Safari/537.36`
+  );
+  bingSession.webRequest.onBeforeRequest(
+    { urls: ['https://cn.bing.com/*', 'http://cn.bing.com/*'] },
+    (details, callback) => {
+      if (details.resourceType === 'mainFrame') {
+        // 保留原路径和查询参数（如搜索词 ?q=xxx），只把 cn.bing.com 换成 www.bing.com 并加国际版标记。
+        // 避免粗暴改写回首页导致搜索词丢失、搜索后跳回首页。
+        try {
+          const u = new URL(details.url);
+          u.hostname = 'www.bing.com';
+          u.protocol = 'https:';
+          u.searchParams.set('setmkt', 'en-US');
+          u.searchParams.set('setlang', 'en-US');
+          u.searchParams.set('cc', 'US');
+          callback({ redirectURL: u.toString() });
+        } catch (e) {
+          callback({ redirectURL: BING_INTL_URL });
+        }
+        return;
+      }
+      callback({});
+    }
+  );
+  bingSession.webRequest.onBeforeSendHeaders(
+    { urls: ['https://*.bing.com/*', 'http://*.bing.com/*'] },
+    (details, callback) => {
+      const headers = Object.assign({}, details.requestHeaders);
+      headers['Accept-Language'] = 'en-US,en;q=0.9';
+      callback({ requestHeaders: headers });
+    }
+  );
+
   // 读取「关闭后继续后台运行」持久化状态
   const bgConf = readData('bg-run.json');
   backgroundRun = !!(bgConf && bgConf.enabled);

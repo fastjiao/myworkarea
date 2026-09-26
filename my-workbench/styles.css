@@ -409,37 +409,120 @@ body {
 }
 
 /* ---------------------------------------------------------------------
-   抖音 webview 自定义外壳工具栏（modules/douyin-shell.js 渲染）
-   布局：#page-douyin 激活时改为纵向 flex → 工具栏在上(40px) + webview 在下(flex:1)
-   风格：浅色简约白底软灰圆角，颜色全部走 CSS 变量，自动适配明暗主题
+   多标签浏览器（modules/browser.js 渲染）
+   布局：#page-browser 激活时纵向 flex → 标签栏+工具栏(固定高) + webview 区(flex:1)
+   风格：浅色简约白底软灰圆角，颜色走 CSS 变量，自动适配明暗主题
    --------------------------------------------------------------------- */
-/* 抖音页激活时改为纵向 flex（仅影响 #page-douyin，不影响 #page-qwen） */
-#page-douyin.active {
+/* 浏览器页激活时纵向 flex（仅影响 #page-browser，不影响 #page-qwen） */
+#page-browser.active {
   flex-direction: column;
 }
 
-.douyin-toolbar {
-  flex: 0 0 40px;
+/* 外壳：标签栏 + 工具栏，固定不滚动 */
+.browser-chrome {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+/* 标签栏 */
+.browser-tabbar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 8px;
-  background: var(--card-bg);
+  height: 32px;
+  padding: 0 6px;
+  gap: 4px;
+  background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
   box-sizing: border-box;
 }
+.browser-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 180px;
+  min-width: 90px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-sub);
+  cursor: pointer;
+  font-size: 12px;
+  overflow: hidden;
+  transition: background 0.15s, color 0.15s;
+}
+.browser-tab:hover {
+  background: var(--hover-bg);
+}
+.browser-tab.active {
+  background: var(--card-bg);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.bw-tab-title {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bw-tab-close {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.bw-tab-close:hover {
+  background: var(--hover-bg);
+  color: var(--text);
+}
+.bw-newtab-btn {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-sub);
+  cursor: pointer;
+}
+.bw-newtab-btn:hover {
+  background: var(--hover-bg);
+  color: var(--text);
+}
 
-/* 左侧导航按钮组 / 右侧工具按钮组 */
-.dy-nav-group,
-.dy-tool-group {
+/* 工具栏 */
+.browser-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 8px;
+  box-sizing: border-box;
+}
+.bw-nav-group,
+.bw-tool-group {
   display: flex;
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
 }
-
-/* 单个图标按钮 */
-.dy-btn {
+.bw-btn {
   width: 28px;
   height: 28px;
   padding: 0;
@@ -453,26 +536,24 @@ body {
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.dy-btn:hover {
+.bw-btn:hover {
   background: var(--hover-bg);
   color: var(--text);
 }
-.dy-btn:disabled {
+.bw-btn:disabled {
   color: var(--text-muted);
   cursor: not-allowed;
   opacity: 0.45;
 }
-.dy-btn:disabled:hover {
+.bw-btn:disabled:hover {
   background: transparent;
 }
-
-/* 中间地址栏 */
-.dy-addr-wrap {
+.bw-addr-wrap {
   flex: 1;
   min-width: 0;
   margin: 0 6px;
 }
-.dy-addr-input {
+.bw-addr-input {
   width: 100%;
   height: 28px;
   padding: 0 10px;
@@ -485,28 +566,38 @@ body {
   box-sizing: border-box;
   transition: border-color 0.15s, background 0.15s;
 }
-.dy-addr-input:focus {
+.bw-addr-input:focus {
   border-color: var(--primary);
   background: var(--card-bg);
 }
-
-/* 透明度滑块 */
-.dy-opacity-wrap {
+.bw-opacity-wrap {
   display: flex;
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
 }
-.dy-opacity-label {
+.bw-opacity-label {
   font-size: 11px;
   color: var(--text-muted);
   user-select: none;
 }
-.dy-opacity-slider {
+.bw-opacity-slider {
   width: 70px;
   height: 4px;
   cursor: pointer;
   accent-color: var(--primary);
+}
+
+/* webview 区：承载多个 webview，激活的显示其余隐藏 */
+.browser-views {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+.browser-webview {
+  position: absolute;
+  inset: 0;
+  border: none;
 }
 
 /* ---------------------------------------------------------------------

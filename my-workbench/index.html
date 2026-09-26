@@ -62,10 +62,10 @@
           <span class="nav-icon" data-icon="music"></span>
           <span class="nav-label">音乐</span>
         </button>
-        <!-- 抖音：主窗口内嵌 webview 虚拟页面 -->
-        <button class="nav-item" data-page="douyin">
-          <span class="nav-icon" data-icon="douyin"></span>
-          <span class="nav-label">抖音</span>
+        <!-- 浏览器：多标签浏览器（modules/browser.js 渲染），默认开 Microsoft Bing -->
+        <button class="nav-item" data-page="browser">
+          <span class="nav-icon" data-icon="compass"></span>
+          <span class="nav-label">浏览器</span>
         </button>
         <!-- 千问：主窗口内嵌 webview 虚拟页面 -->
         <button class="nav-item" data-page="qwen">
@@ -93,11 +93,15 @@
         <section id="page-calendar" class="page"></section>
         <section id="page-sign" class="page"></section>
         <section id="page-netease" class="page"></section>
-        <!-- 抖音：主窗口内嵌 webview（data-src 懒加载，首次切到该页才真正加载；由 renderer.js 设置 src）。
-             上方 #douyin-toolbar 为自定义外壳工具栏（由 modules/douyin-shell.js 渲染），下方 webview 保留原样。 -->
-        <section id="page-douyin" class="page page-embed">
-          <div id="douyin-toolbar" class="douyin-toolbar"></div>
-          <webview id="webview-douyin" class="webview-box" data-src="https://www.douyin.com/"></webview>
+        <!-- 浏览器：多标签浏览器（modules/browser.js 渲染）。
+             结构：标签栏 + 工具栏（固定高度） + webview 区（flex:1）。
+             webview 动态创建，懒加载：首次切到该页才创建首个标签。 -->
+        <section id="page-browser" class="page page-embed">
+          <div id="browser-chrome" class="browser-chrome">
+            <div id="browser-tabbar" class="browser-tabbar"></div>
+            <div id="browser-toolbar" class="browser-toolbar"></div>
+          </div>
+          <div id="browser-views" class="browser-views"></div>
         </section>
         <!-- 千问：内嵌 webview（独立 partition 持久化登录态，桌面 UA 保证网页版可用） -->
         <section id="page-qwen" class="page page-embed">
@@ -166,7 +170,7 @@
   <script src="modules/calendar.js"></script>
   <script src="modules/sign.js"></script>
   <script src="modules/netease.js"></script>
-  <script src="modules/douyin-shell.js"></script>
+  <script src="modules/browser.js"></script>
   <script src="modules/clock.js"></script>
   <script src="modules/settings.js"></script>
   <script src="renderer.js"></script>
