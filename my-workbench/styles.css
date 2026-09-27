@@ -419,14 +419,18 @@ body {
   margin-bottom: 14px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
+}
+/* 标题文字占左侧，操作按钮紧凑靠右 */
+.section-title > :first-child {
+  margin-right: auto;
 }
 
 /* 网页快捷方式搜索框 */
 .web-search-box {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 0;
   margin-left: auto;
   margin-right: 12px;
 }
@@ -466,6 +470,7 @@ body {
   color: var(--text-sub);
   font-size: 12px;
   cursor: pointer;
+  margin-left: 6px;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 .web-browser-btn:hover {
@@ -2790,6 +2795,13 @@ body[data-theme='light'] .netease-toggle-btn.active {
   align-items: center;
   gap: 18px;
   min-width: 0;
+  flex: 1;
+}
+/* 顶栏内搜索框：占据头像右侧至右侧按钮之间的空间 */
+.netease-topbar .netease-search-bar {
+  flex: 1;
+  max-width: 380px;
+  margin: 0;
 }
 .netease-topbar-title {
   font-size: 17px;
@@ -2932,6 +2944,93 @@ body[data-theme='light'] .netease-toggle-btn.active {
   flex-shrink: 0;
   font-size: 13px;
   color: var(--text-muted);
+}
+/* 喜欢列（表头留空，行内放红心按钮） */
+.netease-th-like { width: 44px; flex-shrink: 0; }
+.netease-track-like {
+  width: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.netease-like-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 50%;
+  color: var(--text-muted);
+  opacity: 0.55;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+  padding: 0;
+}
+.netease-like-btn:hover {
+  opacity: 1;
+  background: rgba(255, 77, 79, 0.08);
+}
+.netease-like-btn.liked {
+  color: #ff4d4f;
+  opacity: 1;
+}
+.netease-like-btn:disabled {
+  cursor: default;
+}
+
+/* ===== 搜索栏（极简浅色，Apple HIG 风） ===== */
+.netease-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto 14px;
+  padding: 0 4px;
+}
+.netease-search-input {
+  flex: 1;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card-bg, #fff);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.netease-search-input:focus {
+  border-color: #5f86ff;
+  box-shadow: 0 0 0 3px rgba(95, 134, 255, 0.12);
+}
+.netease-search-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.netease-search-back {
+  flex-shrink: 0;
+}
+.netease-search-results-wrap {
+  display: flex;
+  justify-content: center;
+}
+/* 浅色主题：搜索框纯白 + 柔灰边框 */
+body[data-theme='light'] .netease-search-input {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.08);
+}
+body[data-theme='light'] .netease-like-btn:hover {
+  background: rgba(255, 59, 48, 0.08);
+}
+/* 深色主题：搜索框深底 */
+[data-theme='dark'] .netease-search-input {
+  background: rgba(255, 255, 255, 0.04);
 }
 /* 深色主题：hover 背景加深 */
 [data-theme="dark"] .netease-track:hover { background: rgba(255, 255, 255, 0.06); }

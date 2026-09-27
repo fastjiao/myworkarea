@@ -21,7 +21,19 @@ window.Netease = {
   _cookie: '',
   _user: null,
   _likedListCount: 0,
+  _likelist: null,           // Set<number> 喜欢的歌曲 id 集合（红心状态判断）
   _error: '',
+  // ===== 搜索 =====
+  _searchMode: false,        // 是否处于搜索结果视图
+  _searchKeywords: '',       // 当前搜索关键字
+  _searching: false,         // 搜索请求中
+  _searchResults: [],        // 搜索结果列表
+  _searchTotal: 0,           // 搜索结果总数
+  _searchOffset: 0,          // 搜索已加载偏移
+  _searchLoadingMore: false, // 搜索加载更多中
+  _searchErr: '',            // 搜索错误提示
+  _likedBackup: null,        // 进入搜索前 _playlist 备份（返回时恢复）
+  _currentIndexBackup: -1,   // 进入搜索前 _currentIndex 备份
   _autoStarted: false,
   _failCount: 0,           // _silentRefresh 连续确认失效的次数（达到阈值才清退，抗单次抖动）
 
@@ -38,6 +50,7 @@ window.Netease = {
   // ===== 每日签到 =====
   _signinStatus: null,     // null | 'pending' | 'success' | 'already' | 'failed'
   _signinMsg: '',
+  _signinLastDate: '',     // 上次签到日期（YYYY-MM-DD），同一天不重复签到
 
   // ===== 打卡听歌 =====
   _dakaStatus: null,       // null | 'pending' | 'running' | 'success' | 'failed'
@@ -48,13 +61,6 @@ window.Netease = {
 
   // ===== 用户等级 =====
   _userLevel: null,        // { level, listenSongs, ... }
-
-  // ===== 刷单曲播放次数 =====
-  _listenSongId: '',
-  _listenCount: 1,
-  _listenStatus: null,     // null | 'pending' | 'running' | 'success' | 'failed'
-  _listenProgress: 0,
-  _listenMsg: '',
 
   // ===== 播放器状态 =====
   _playlist: [],        // 喜欢的歌曲列表 [{id, name, artist}]
@@ -170,6 +176,8 @@ window.Netease = {
         popup.classList.remove('show');
       });
       left.appendChild(userWrap);
+      // 搜索框（头像右侧）
+      left.appendChild(this._renderSearchBar());
     } else {
       left.appendChild(UI.el('span', 'netease-mini-name', '未登录'));
     }
@@ -190,20 +198,6 @@ window.Netease = {
       signinBtn.addEventListener('click', () => this._dailySignin());
     }
     right.appendChild(signinBtn);
-    // 打卡按钮（已打卡以持久化的 _dakaLastDate 为准，重启后仍显示已打卡）
-    const dakaBtn = UI.el('button', 'btn btn-sm netease-btn netease-topbar-action');
-    if (this._dakaStatus === 'running') {
-      dakaBtn.textContent = '打卡中 ' + this._dakaProgress + '/' + this._dakaTarget;
-      dakaBtn.disabled = true;
-    } else if (this._dakaStatus === 'success' || this._dakaLastDate === DateUtil.today()) {
-      dakaBtn.textContent = '已打卡';
-      dakaBtn.disabled = true;
-      dakaBtn.classList.add('netease-btn-done');
-    } else {
-      dakaBtn.textContent = '打卡听歌';
-      dakaBtn.addEventListener('click', () => this._daka());
-    }
-    right.appendChild(dakaBtn);
     const menu = UI.el('div', 'netease-topbar-menu active');
     menu.appendChild(UI.el('span', 'netease-topbar-menu-name', '我喜欢的音乐'));
     menu.appendChild(UI.el('span', 'netease-like-badge', String(this._likedListCount || 0)));
@@ -389,6 +383,12 @@ window.Netease = {
   // ===================== 已登录内容区：我喜欢列表 =====================
   _renderList() {
     const wrap = UI.el('div', 'netease-list-wrap');
+    // 搜索态：渲染搜索结果
+    if (this._searchMode) {
+      wrap.appendChild(this._renderSearchResults());
+      return wrap;
+    }
+    // "我喜欢"列表
     if (this._playlist.length === 0) {
       const card = UI.el('div', 'netease-card netease-list-empty');
       if (this._playlistLoadError) {
@@ -409,13 +409,8 @@ window.Netease = {
       return wrap;
     }
     const list = UI.el('div', 'netease-track-list netease-track-list-page');
-    // 表头
-    const header = UI.el('div', 'netease-track-header');
-    header.appendChild(UI.el('span', 'netease-th-idx', '#'));
-    header.appendChild(UI.el('span', 'netease-th-title', '标题'));
-    header.appendChild(UI.el('span', 'netease-th-album', '专辑'));
-    header.appendChild(UI.el('span', 'netease-th-time', '时长'));
-    list.appendChild(header);
+    // 表头（"我喜欢"与搜索结果复用）
+    list.appendChild(this._renderTrackHeader());
     // 歌曲行（增量追加时复用 _createTrackRow，避免重复逻辑）
     this._playlist.forEach((t, i) => list.appendChild(this._createTrackRow(t, i)));
     // 滚动加载更多：哨兵元素 + 状态行 + IntersectionObserver
@@ -433,115 +428,7 @@ window.Netease = {
     this._loadMoreIO.observe(sentinel);
     wrap.appendChild(list);
 
-    // 工具卡片区域：打卡听歌设置 + 刷播放量
-    wrap.appendChild(this._renderToolsCard());
-
     return wrap;
-  },
-
-  // ===================== 工具卡片：打卡设置 + 刷播放量 =====================
-  _renderToolsCard() {
-    const section = UI.el('div', 'netease-tools-section');
-
-    // 打卡听歌设置卡片
-    const dakaCard = UI.el('div', 'netease-card netease-tool-card');
-    dakaCard.appendChild(UI.el('div', 'netease-card-title', '打卡听歌'));
-    dakaCard.appendChild(UI.el('div', 'netease-tip', '模拟播放歌曲刷每日听歌量，每天上限300首'));
-    // 目标数量输入
-    const dakaRow = UI.el('div', 'netease-form-row netease-tool-row');
-    dakaRow.appendChild(UI.el('label', 'netease-form-label', '目标数量'));
-    const dakaInput = UI.el('input', 'netease-form-input netease-tool-input');
-    dakaInput.type = 'number';
-    dakaInput.min = '1';
-    dakaInput.max = '300';
-    dakaInput.value = String(this._dakaTarget);
-    dakaInput.addEventListener('input', (e) => { this._dakaTarget = Math.min(300, Math.max(1, parseInt(e.target.value) || 300)); });
-    dakaRow.appendChild(dakaInput);
-    dakaCard.appendChild(dakaRow);
-    // 打卡进度/状态（已打卡日期以 _dakaLastDate 持久化记录为准，重启后同样不重复打卡）
-    if (this._dakaStatus === 'running') {
-      const progress = UI.el('div', 'netease-progress-wrap');
-      const bar = UI.el('div', 'netease-progress-bar');
-      const fill = UI.el('div', 'netease-progress-fill');
-      fill.style.width = (this._dakaProgress / this._dakaTarget * 100) + '%';
-      bar.appendChild(fill);
-      progress.appendChild(bar);
-      progress.appendChild(UI.el('div', 'netease-progress-text', this._dakaProgress + ' / ' + this._dakaTarget));
-      dakaCard.appendChild(progress);
-    } else if (this._dakaStatus === 'success' || this._dakaLastDate === DateUtil.today()) {
-      dakaCard.appendChild(UI.el('div', 'netease-tool-status success',
-        (this._dakaStatus === 'success' && this._dakaMsg) ? this._dakaMsg : '今日已打卡'));
-    } else if (this._dakaStatus === 'failed') {
-      dakaCard.appendChild(UI.el('div', 'netease-tool-status failed', this._dakaMsg || '打卡失败'));
-    }
-    // 打卡按钮
-    const dakaActions = UI.el('div', 'netease-actions');
-    const dakaBtn = UI.el('button', 'btn btn-sm netease-btn');
-    const dakaDoneToday = this._dakaLastDate === DateUtil.today();
-    if (this._dakaStatus === 'running') {
-      dakaBtn.textContent = '打卡中…';
-    } else if (dakaDoneToday) {
-      dakaBtn.textContent = '已打卡';
-    } else {
-      dakaBtn.textContent = '开始打卡';
-    }
-    dakaBtn.disabled = this._dakaStatus === 'running' || dakaDoneToday;
-    dakaBtn.addEventListener('click', () => this._daka());
-    dakaActions.appendChild(dakaBtn);
-    dakaCard.appendChild(dakaActions);
-    section.appendChild(dakaCard);
-
-    // 刷单曲播放次数卡片
-    const listenCard = UI.el('div', 'netease-card netease-tool-card');
-    listenCard.appendChild(UI.el('div', 'netease-card-title', '刷单曲播放次数'));
-    listenCard.appendChild(UI.el('div', 'netease-tip', '输入歌曲ID和次数，模拟播放刷量'));
-    // 歌曲ID输入
-    const songIdRow = UI.el('div', 'netease-form-row netease-tool-row');
-    songIdRow.appendChild(UI.el('label', 'netease-form-label', '歌曲ID'));
-    const songIdInput = UI.el('input', 'netease-form-input netease-tool-input');
-    songIdInput.type = 'text';
-    songIdInput.placeholder = '请输入歌曲ID';
-    songIdInput.value = this._listenSongId;
-    songIdInput.addEventListener('input', (e) => { this._listenSongId = e.target.value; });
-    songIdRow.appendChild(songIdInput);
-    listenCard.appendChild(songIdRow);
-    // 播放次数输入
-    const countRow = UI.el('div', 'netease-form-row netease-tool-row');
-    countRow.appendChild(UI.el('label', 'netease-form-label', '播放次数'));
-    const countInput = UI.el('input', 'netease-form-input netease-tool-input');
-    countInput.type = 'number';
-    countInput.min = '1';
-    countInput.max = '1000';
-    countInput.value = String(this._listenCount);
-    countInput.addEventListener('input', (e) => { this._listenCount = Math.min(1000, Math.max(1, parseInt(e.target.value) || 1)); });
-    countRow.appendChild(countInput);
-    listenCard.appendChild(countRow);
-    // 刷播放进度/状态
-    if (this._listenStatus === 'running') {
-      const progress = UI.el('div', 'netease-progress-wrap');
-      const bar = UI.el('div', 'netease-progress-bar');
-      const fill = UI.el('div', 'netease-progress-fill');
-      fill.style.width = (this._listenProgress / this._listenCount * 100) + '%';
-      bar.appendChild(fill);
-      progress.appendChild(bar);
-      progress.appendChild(UI.el('div', 'netease-progress-text', this._listenProgress + ' / ' + this._listenCount));
-      listenCard.appendChild(progress);
-    } else if (this._listenStatus === 'success') {
-      listenCard.appendChild(UI.el('div', 'netease-tool-status success', this._listenMsg || '刷播放完成'));
-    } else if (this._listenStatus === 'failed') {
-      listenCard.appendChild(UI.el('div', 'netease-tool-status failed', this._listenMsg || '刷播放失败'));
-    }
-    // 刷播放按钮
-    const listenActions = UI.el('div', 'netease-actions');
-    const listenBtn = UI.el('button', 'btn btn-sm netease-btn');
-    listenBtn.textContent = this._listenStatus === 'running' ? '刷播放中…' : '开始刷播放';
-    listenBtn.disabled = this._listenStatus === 'running';
-    listenBtn.addEventListener('click', () => this._listenSong());
-    listenActions.appendChild(listenBtn);
-    listenCard.appendChild(listenActions);
-    section.appendChild(listenCard);
-
-    return section;
   },
 
   // 创建单首歌曲行（首屏渲染与滚动加载更多复用）
@@ -559,6 +446,18 @@ window.Netease = {
     item.appendChild(titleCell);
     item.appendChild(UI.el('span', 'netease-track-album', t.album || ''));
     item.appendChild(UI.el('span', 'netease-track-time', this._formatTime(t.duration / 1000)));
+    // 红心按钮（收藏/取消收藏）
+    const liked = !!(this._likelist && this._likelist.has(t.id));
+    const likeCell = UI.el('div', 'netease-track-like');
+    const likeBtn = UI.el('button', 'netease-like-btn' + (liked ? ' liked' : ''));
+    likeBtn.title = liked ? '取消收藏' : '收藏';
+    likeBtn.innerHTML = window.svgIcon(liked ? 'heart-fill' : 'heart', 16);
+    likeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this._toggleLike(t.id, liked, likeBtn, item);
+    });
+    likeCell.appendChild(likeBtn);
+    item.appendChild(likeCell);
     item.addEventListener('click', () => this._playIndex(i));
     return item;
   },
@@ -566,6 +465,21 @@ window.Netease = {
   // 更新底部「已加载 X / Y 首」状态行
   _updateLoadMoreStatus() {
     if (!this._loadMoreStatus) return;
+    if (this._searchMode) {
+      // 搜索结果状态行
+      const total = this._searchTotal || this._searchResults.length;
+      const loaded = this._searchResults.length;
+      if (this._searchLoadingMore) {
+        this._loadMoreStatus.textContent = '加载更多中…';
+      } else if (total > loaded) {
+        this._loadMoreStatus.textContent = '已加载 ' + loaded + ' / ' + total + ' 首（滚动到底自动加载）';
+      } else if (total > 0) {
+        this._loadMoreStatus.textContent = '共 ' + total + ' 首';
+      } else {
+        this._loadMoreStatus.textContent = '';
+      }
+      return;
+    }
     const total = this._playlistTotal || this._playlist.length;
     if (this._loadingMore) {
       this._loadMoreStatus.textContent = '加载更多中…';
@@ -650,6 +564,7 @@ window.Netease = {
         if (local.userLevel) this._userLevel = local.userLevel;
         if (local.dakaLastDate) this._dakaLastDate = local.dakaLastDate;
         if (local.dakaTarget) this._dakaTarget = Math.min(300, Math.max(1, local.dakaTarget));
+        if (local.signinLastDate) this._signinLastDate = local.signinLastDate;
         if (local.loopMode) this._loopMode = local.loopMode;
         if (typeof local.shuffle === 'boolean') this._shuffle = local.shuffle;
         this._state = 'logged-in';
@@ -658,7 +573,8 @@ window.Netease = {
         this._silentRefresh();
         // 恢复登录态后加载等级（非阻塞）
         this._loadUserLevel();
-        // 每天首次恢复登录态后自动打卡
+        // 每天首次恢复登录态后自动签到 + 自动打卡
+        this._autoSignin();
         this._autoDaka();
         return true;
       }
@@ -723,6 +639,7 @@ window.Netease = {
         if (likeRes) {
           const ids = likeRes.ids || (likeRes.data && likeRes.data.ids) || [];
           count = Array.isArray(ids) ? ids.length : 0;
+          this._likelist = Array.isArray(ids) ? new Set(ids) : null;
         }
         if (plRes) {
           const playlist = plRes.playlist || (plRes.data && plRes.data.playlist) || [];
@@ -755,6 +672,7 @@ window.Netease = {
       userLevel: this._userLevel,
       dakaTarget: this._dakaTarget,
       dakaLastDate: this._dakaLastDate,
+      signinLastDate: this._signinLastDate,
       loopMode: this._loopMode,
       shuffle: this._shuffle,
       savedAt: Date.now()
@@ -773,8 +691,8 @@ window.Netease = {
 
   // -------------------------------------------------------------------
   // API 封装：经主进程 IPC 代理请求 localhost:3000
-  async _api(apiPath, query, cookie) {
-    const res = await window.workbench.neteaseFetch({ apiPath, query, cookie: cookie || this._cookie });
+  async _api(apiPath, query, cookie, method, body) {
+    const res = await window.workbench.neteaseFetch({ apiPath, query, cookie: cookie || this._cookie, method, body });
     if (!res.success) {
       throw new Error('无法连接 localhost:3000（' + (res.message || '连接失败') + '）');
     }
@@ -979,6 +897,7 @@ window.Netease = {
           const likeRes = await this._api('/likelist', { uid: userId, timestamp: Date.now() });
           const ids = likeRes.ids || (likeRes.data && likeRes.data.ids) || [];
           count = Array.isArray(ids) ? ids.length : 0;
+          this._likelist = Array.isArray(ids) ? new Set(ids) : null;
         } catch (e) { /* 忽略 */ }
         if (count === 0) {
           try {
@@ -1002,7 +921,8 @@ window.Netease = {
       this._loadPlaylist();
       // 加载用户等级信息（非阻塞，失败不影响主流程）
       this._loadUserLevel();
-      // 每天首次登录自动打卡听歌（同一天不重复）
+      // 每天首次登录自动签到 + 自动打卡听歌（同一天不重复）
+      this._autoSignin();
       this._autoDaka();
     } catch (err) {
       this._state = 'logged-in';
@@ -1582,10 +1502,14 @@ window.Netease = {
       if (res.code === 200) {
         this._signinStatus = 'success';
         this._signinMsg = '签到成功，积分 +' + (res.point || 0);
+        this._signinLastDate = DateUtil.today();
+        this._saveLocalData();
         UI.setToast('签到成功！', 'success');
       } else if (res.code === -2 || res.msg && res.msg.includes('重复')) {
         this._signinStatus = 'already';
         this._signinMsg = '今日已签到';
+        this._signinLastDate = DateUtil.today();
+        this._saveLocalData();
         UI.setToast('今日已签到', 'info');
       } else {
         this._signinStatus = 'failed';
@@ -1688,44 +1612,16 @@ window.Netease = {
   },
 
   // -------------------------------------------------------------------
-  // 刷单曲播放次数
-  async _listenSong() {
-    if (!this._listenSongId || this._listenCount < 1) {
-      UI.setToast('请输入歌曲ID和播放次数', 'error');
-      return;
-    }
-    if (this._listenStatus === 'running') return;
-    this._listenStatus = 'running';
-    this._listenProgress = 0;
-    this._listenMsg = '';
-    this.render();
-    try {
-      const batchSize = 50;
-      const total = Math.min(this._listenCount, 1000); // 上限 1000 次
-      for (let i = 0; i < total; i += batchSize) {
-        const batchCount = Math.min(batchSize, total - i);
-        const logs = [];
-        for (let j = 0; j < batchCount; j++) {
-          logs.push({
-            action: 'play',
-            json: { download: 0, end: 'playend', id: String(this._listenSongId), sourceId: '', time: 240, type: 'song', wifi: 0 }
-          });
-        }
-        try {
-          await this._api('/weblog', { logs: JSON.stringify(logs), timestamp: Date.now() });
-        } catch (e) { /* 忽略单批失败 */ }
-        this._listenProgress = Math.min(i + batchSize, total);
-        this.render();
+  // 自动签到（每天首次登录时执行，同一天不重复）
+  _autoSignin() {
+    const today = DateUtil.today();
+    if (this._signinLastDate === today) return; // 同一天已签到
+    // 延迟 1.5 秒执行，错开自动打卡请求
+    setTimeout(() => {
+      if (this._state === 'logged-in' && this._signinLastDate !== today) {
+        this._dailySignin();
       }
-      this._listenStatus = 'success';
-      this._listenMsg = '刷播放完成，共 ' + this._listenProgress + ' 次';
-      UI.setToast('刷播放完成！共 ' + this._listenProgress + ' 次', 'success');
-    } catch (err) {
-      this._listenStatus = 'failed';
-      this._listenMsg = err.message || '刷播放失败';
-      UI.setToast('刷播放失败：' + this._listenMsg, 'error');
-    }
-    this.render();
+    }, 1500);
   },
 
   // -------------------------------------------------------------------
@@ -1743,6 +1639,237 @@ window.Netease = {
     } catch (e) { /* 忽略等级加载失败 */ }
   },
 
+  // ===== 歌曲列表表头（"我喜欢"与搜索结果复用） =====
+  _renderTrackHeader() {
+    const header = UI.el('div', 'netease-track-header');
+    header.appendChild(UI.el('span', 'netease-th-idx', '#'));
+    header.appendChild(UI.el('span', 'netease-th-title', '标题'));
+    header.appendChild(UI.el('span', 'netease-th-album', '专辑'));
+    header.appendChild(UI.el('span', 'netease-th-time', '时长'));
+    header.appendChild(UI.el('span', 'netease-th-like', ''));
+    return header;
+  },
+
+  // ===== 搜索栏 =====
+  _renderSearchBar() {
+    const bar = UI.el('div', 'netease-search-bar');
+    const input = UI.el('input', 'netease-search-input');
+    input.type = 'text';
+    input.placeholder = '搜索歌曲、歌手';
+    input.value = this._searchKeywords || '';
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const v = input.value.trim();
+        if (v) this._search(v);
+      } else if (e.key === 'Escape' && this._searchMode) {
+        this._exitSearch();
+      }
+    });
+    bar.appendChild(input);
+    const searchBtn = UI.el('button', 'btn btn-sm netease-btn netease-search-btn');
+    searchBtn.innerHTML = window.svgIcon('search-bold', 16);
+    searchBtn.title = '搜索';
+    searchBtn.addEventListener('click', () => {
+      const v = input.value.trim();
+      if (v) this._search(v);
+    });
+    bar.appendChild(searchBtn);
+    // 搜索态时显示"返回我喜欢"按钮
+    if (this._searchMode) {
+      const backBtn = UI.el('button', 'btn btn-sm netease-btn netease-search-back');
+      backBtn.textContent = '返回我喜欢';
+      backBtn.addEventListener('click', () => this._exitSearch());
+      bar.appendChild(backBtn);
+    }
+    return bar;
+  },
+
+  // ===== 搜索结果列表 =====
+  _renderSearchResults() {
+    const wrap = UI.el('div', 'netease-search-results-wrap');
+    if (this._searching) {
+      const card = UI.el('div', 'netease-card netease-list-empty');
+      card.appendChild(UI.el('div', 'netease-spinner'));
+      card.appendChild(UI.el('div', 'netease-tip', '正在搜索「' + this._searchKeywords + '」…'));
+      wrap.appendChild(card);
+      return wrap;
+    }
+    if (this._searchErr) {
+      const card = UI.el('div', 'netease-card netease-list-empty');
+      card.appendChild(UI.el('div', 'netease-card-title', '搜索失败'));
+      card.appendChild(UI.el('div', 'netease-tip', this._searchErr));
+      const row = UI.el('div', 'netease-actions');
+      const retryBtn = UI.el('button', 'btn btn-sm netease-btn', '重试');
+      retryBtn.addEventListener('click', () => this._search(this._searchKeywords));
+      row.appendChild(retryBtn);
+      card.appendChild(row);
+      wrap.appendChild(card);
+      return wrap;
+    }
+    if (this._searchResults.length === 0) {
+      const card = UI.el('div', 'netease-card netease-list-empty');
+      card.appendChild(UI.el('div', 'netease-tip', '未找到「' + this._searchKeywords + '」的相关歌曲'));
+      wrap.appendChild(card);
+      return wrap;
+    }
+    const list = UI.el('div', 'netease-track-list netease-track-list-page');
+    list.appendChild(this._renderTrackHeader());
+    this._searchResults.forEach((t, i) => list.appendChild(this._createTrackRow(t, i)));
+    const sentinel = UI.el('div', 'netease-load-more-sentinel');
+    list.appendChild(sentinel);
+    this._loadMoreSentinel = sentinel;
+    this._loadMoreStatus = UI.el('div', 'netease-load-more-status');
+    this._updateLoadMoreStatus();
+    list.appendChild(this._loadMoreStatus);
+    if (this._loadMoreIO) this._loadMoreIO.disconnect();
+    this._loadMoreIO = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) this._loadMoreSearch();
+    }, { root: null, rootMargin: '400px' });
+    this._loadMoreIO.observe(sentinel);
+    wrap.appendChild(list);
+    return wrap;
+  },
+
+  // 执行搜索（调用 /cloudsearch，type=1 歌曲）
+  async _search(keywords) {
+    const kw = (keywords || '').trim();
+    if (!kw) return;
+    if (!this._cookie) { UI.setToast('请先登录', 'error'); return; }
+    // 进入搜索态：备份"我喜欢"列表（仅首次进入时备份，避免重复搜索覆盖备份）
+    if (!this._searchMode) {
+      this._likedBackup = this._playlist;
+      this._currentIndexBackup = this._currentIndex;
+    }
+    this._searchMode = true;
+    this._searchKeywords = kw;
+    this._searching = true;
+    this._searchErr = '';
+    this._searchResults = [];
+    this._searchTotal = 0;
+    this._searchOffset = 0;
+    this.render();
+    try {
+      const res = await this._api('/cloudsearch', { keywords: kw, type: 1, limit: this._pageSize, offset: 0, timestamp: Date.now() });
+      const result = res.result || (res.data && res.data.result) || {};
+      const songs = result.songs || [];
+      this._searchTotal = result.songCount || songs.length || 0;
+      this._searchResults = this._mapSongs(songs);
+      // 搜索结果同时作为当前播放队列（_playlist 指向同一引用，上一首/下一首在结果内切换）
+      this._playlist = this._searchResults;
+      this._searching = false;
+      this._searchOffset = this._searchResults.length;
+      this.render();
+    } catch (err) {
+      this._searching = false;
+      this._searchErr = err.message;
+      this.render();
+      UI.setToast('搜索失败：' + err.message, 'error');
+    }
+  },
+
+  // 搜索结果滚动加载更多
+  async _loadMoreSearch() {
+    if (this._searchLoadingMore || this._searching) return;
+    if (this._searchTotal && this._searchResults.length >= this._searchTotal) return;
+    this._searchLoadingMore = true;
+    this._updateLoadMoreStatus();
+    try {
+      const offset = this._searchResults.length;
+      const res = await this._api('/cloudsearch', { keywords: this._searchKeywords, type: 1, limit: this._pageSize, offset, timestamp: Date.now() });
+      const result = res.result || (res.data && res.data.result) || {};
+      const songs = result.songs || [];
+      const more = this._mapSongs(songs);
+      const startIndex = this._searchResults.length;
+      // 用 push 保持 _playlist 与 _searchResults 同一引用
+      this._searchResults.push(...more);
+      this._searchOffset = this._searchResults.length;
+      this._searchLoadingMore = false;
+      // 增量插行到哨兵之前
+      const list = document.querySelector('.netease-track-list-page');
+      if (list) {
+        const sentinel = list.querySelector('.netease-load-more-sentinel');
+        more.forEach((t, k) => {
+          const row = this._createTrackRow(t, startIndex + k);
+          if (sentinel) list.insertBefore(row, sentinel);
+          else list.appendChild(row);
+        });
+      }
+      this._updateLoadMoreStatus();
+    } catch (e) {
+      this._searchLoadingMore = false;
+      this._updateLoadMoreStatus();
+      UI.setToast('加载更多失败：' + e.message, 'error');
+    }
+  },
+
+  // 退出搜索，恢复"我喜欢"列表为播放队列
+  _exitSearch() {
+    if (!this._searchMode) return;
+    this._searchMode = false;
+    this._searchKeywords = '';
+    this._searchResults = [];
+    this._searchTotal = 0;
+    this._searchOffset = 0;
+    this._searchErr = '';
+    this._searching = false;
+    this._searchLoadingMore = false;
+    if (this._likedBackup) {
+      this._playlist = this._likedBackup;
+      this._currentIndex = this._currentIndexBackup;
+      this._likedBackup = null;
+    }
+    this.render();
+  },
+
+  // 切换收藏（红心）：调用 /like 接口，乐观更新 UI
+  async _toggleLike(id, currentLiked, btnEl, rowEl) {
+    if (!this._cookie) { UI.setToast('请先登录', 'error'); return; }
+    const newLiked = !currentLiked;
+    // 乐观更新按钮 UI
+    btnEl.classList.toggle('liked', newLiked);
+    btnEl.title = newLiked ? '取消收藏' : '收藏';
+    btnEl.innerHTML = window.svgIcon(newLiked ? 'heart-fill' : 'heart', 16);
+    btnEl.disabled = true;
+    try {
+      const res = await this._api('/like', { id, like: newLiked, timestamp: Date.now() });
+      const code = res.code || (res.data && res.data.code);
+      if (code === 200) {
+        // 更新本地喜欢集合
+        if (!this._likelist) this._likelist = new Set();
+        if (newLiked) {
+          this._likelist.add(id);
+          this._likedListCount = (this._likedListCount || 0) + 1;
+        } else {
+          this._likelist.delete(id);
+          this._likedListCount = Math.max(0, (this._likedListCount || 0) - 1);
+        }
+        // 同步顶部"我喜欢"数量角标
+        const badge = document.querySelector('.netease-like-badge');
+        if (badge) badge.textContent = String(this._likedListCount || 0);
+        // 取消收藏：若在"我喜欢"列表视图，从列表移除该行
+        if (!newLiked && !this._searchMode && rowEl) {
+          this._playlist = this._playlist.filter((s) => s.id !== id);
+          if (this._currentIndex >= this._playlist.length) this._currentIndex = this._playlist.length - 1;
+          rowEl.remove();
+          this._updateLoadMoreStatus();
+        }
+        UI.setToast(newLiked ? '已收藏' : '已取消收藏', 'success');
+      } else {
+        // 失败回滚按钮 UI
+        btnEl.classList.toggle('liked', currentLiked);
+        btnEl.title = currentLiked ? '取消收藏' : '收藏';
+        btnEl.innerHTML = window.svgIcon(currentLiked ? 'heart-fill' : 'heart', 16);
+        UI.setToast('操作失败：' + (res.msg || res.message || '未知错误'), 'error');
+      }
+    } catch (err) {
+      btnEl.classList.toggle('liked', currentLiked);
+      btnEl.title = currentLiked ? '取消收藏' : '收藏';
+      btnEl.innerHTML = window.svgIcon(currentLiked ? 'heart-fill' : 'heart', 16);
+      UI.setToast('操作失败：' + err.message, 'error');
+    }
+    btnEl.disabled = false;
+  },
+
   // -------------------------------------------------------------------
   // 退出登录
   async _logout() {
@@ -1756,6 +1883,18 @@ window.Netease = {
     this._cookie = '';
     this._user = null;
     this._likedListCount = 0;
+    this._likelist = null;
+    // 清空搜索态
+    this._searchMode = false;
+    this._searchKeywords = '';
+    this._searchResults = [];
+    this._searchTotal = 0;
+    this._searchOffset = 0;
+    this._searching = false;
+    this._searchLoadingMore = false;
+    this._searchErr = '';
+    this._likedBackup = null;
+    this._currentIndexBackup = -1;
     this._qrImg = '';
     this._qrKey = '';
     this._playlist = [];
@@ -1768,14 +1907,11 @@ window.Netease = {
     this._captchaInput = '';
     this._loginErrorMsg = '';
     this._signinStatus = null;
+    this._signinLastDate = '';
     this._dakaStatus = null;
     this._dakaProgress = 0;
     this._dakaLastDate = '';
     this._userLevel = null;
-    this._listenSongId = '';
-    this._listenCount = 1;
-    this._listenStatus = null;
-    this._listenProgress = 0;
     this._state = 'logged-out';
     this._startLogin();
     UI.setToast('已退出登录', 'info');

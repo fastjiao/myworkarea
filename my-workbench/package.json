@@ -1,7 +1,7 @@
 {
   "name": "jiao-workbench",
-  "version": "3.0.1",
-  "description": "教公台-阡稻工作室桌面客户端：软件快捷启动、文件/文件夹打开、日历与待办、一键签到、网易云音乐",
+  "version": "3.4.1",
+  "description": "",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -10,7 +10,7 @@
   },
   "build": {
     "appId": "com.jiaogongtai.workbench",
-    "productName": "教公台-阡稻工作室",
+    "productName": "教公台",
     "directories": {
       "output": "../jiao-release"
     },
@@ -36,7 +36,7 @@
       "perMachine": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "教公台-阡稻工作室"
+      "shortcutName": "教公台"
     },
     "files": [
       "main.js",

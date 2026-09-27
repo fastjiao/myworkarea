@@ -870,10 +870,23 @@ function readImageDataUrl(filePath) {
  *   （.lnk 先解析目标路径/自定义图标路径，类似 Windows 更改快捷方式图标）
  * @returns {Promise<{canceled: boolean, path?: string, success?: boolean, dataUrl?: string, message?: string}>}
  */
-ipcMain.handle('select-image', async (event) => {
+ipcMain.handle('select-image', async (event, hintPath) => {
   const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+  // 根据传入的快捷方式路径定位到其所在目录（文件对话框直接打开 .exe 所在位置）
+  let defaultPath;
+  if (hintPath && typeof hintPath === 'string') {
+    try {
+      const p = path.resolve(hintPath);
+      if (fs.existsSync(p)) {
+        defaultPath = fs.statSync(p).isDirectory() ? p : path.dirname(p);
+      } else if (fs.existsSync(path.dirname(p))) {
+        defaultPath = path.dirname(p);
+      }
+    } catch (e) { /* 忽略，回退系统默认位置 */ }
+  }
   const result = await dialog.showOpenDialog(win, {
     title: '选择图标',
+    defaultPath,
     properties: ['openFile'],
     filters: [
       { name: '图片文件', extensions: ['png', 'jpg', 'jpeg', 'gif', 'ico', 'webp', 'bmp', 'svg'] },
@@ -1062,7 +1075,7 @@ const SCAN_EXCLUDE_PATHS = /^[cC]:\\Windows\\(System32|SysWOW64)\\/i;
 
 /**
  * 过滤并合并去重扫描结果
- * 规则：只保留 .exe 和 .lnk；排除名称含卸载/帮助等；排除 System32 下；按路径去重；按名称排序
+ * 规则：只保留 .exe（不收 .lnk，图标识别不可靠）；排除名称含卸载/帮助等；排除 System32 下；按路径去重；按名称排序
  * @param {Array} startMenuApps 开始菜单扫描结果
  * @param {Array} registryApps 注册表扫描结果
  * @returns {Array<{name: string, path: string}>}
@@ -1075,7 +1088,7 @@ function mergeAndDedupScanResults(startMenuApps, registryApps) {
     const name = String(item.name).trim();
     const p = String(item.path).trim();
     if (!name || !p) return;
-    if (!/\.exe$/i.test(p) && !/\.lnk$/i.test(p)) return;
+    if (!/\.exe$/i.test(p)) return;
     if (SCAN_EXCLUDE_NAMES.test(name)) return;
     if (SCAN_EXCLUDE_PATHS.test(p)) return;
     const key = p.toLowerCase();
@@ -1095,9 +1108,9 @@ function mergeAndDedupScanResults(startMenuApps, registryApps) {
  */
 ipcMain.handle('scan-installed-apps', async () => {
   try {
-    const startMenuApps = scanStartMenuShortcuts();
+    // 仅扫描卸载注册表的 .exe 路径，不扫开始菜单 .lnk（.lnk 图标识别不可靠）
     const registryApps = await scanUninstallRegistry();
-    const merged = mergeAndDedupScanResults(startMenuApps, registryApps);
+    const merged = mergeAndDedupScanResults([], registryApps);
     return { success: true, apps: merged };
   } catch (err) {
     return { success: false, message: err.message || '扫描失败', apps: [] };
@@ -1123,7 +1136,7 @@ const NETEASE_API_PORT = 3000;
  * @param {{ apiPath: string, query?: object, cookie?: string }} arg
  * @returns {Promise<{success: boolean, status?: number, body?: string, setCookie?: string[], message?: string}>}
  */
-ipcMain.handle('netease:fetch', async (event, { apiPath, query, cookie }) => {
+ipcMain.handle('netease:fetch', async (event, { apiPath, query, cookie, method, body }) => {
   return new Promise((resolve) => {
     // 拼接查询字符串（自动编码中文/特殊字符）
     const qs = query ? '?' + new URLSearchParams(query).toString() : '';
@@ -1131,26 +1144,34 @@ ipcMain.handle('netease:fetch', async (event, { apiPath, query, cookie }) => {
       hostname: NETEASE_API_HOST,
       port: NETEASE_API_PORT,
       path: apiPath + qs,
-      method: 'GET',
+      method: method || 'GET',
       headers: { 'User-Agent': 'Mozilla/5.0 (Electron Netease Panel)' }
     };
     // 登录后的后续请求需携带 Cookie
     if (cookie) options.headers['Cookie'] = cookie;
+    // POST 请求体：支持对象（转 form-urlencoded）或字符串
+    let bodyStr = '';
+    if (body) {
+      bodyStr = typeof body === 'string' ? body : new URLSearchParams(body).toString();
+      options.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+      options.headers['Content-Length'] = Buffer.byteLength(bodyStr);
+    }
 
     const req = http.request(options, (res) => {
-      let body = '';
+      let data = '';
       res.setEncoding('utf8');
-      res.on('data', (chunk) => { body += chunk; });
+      res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {
         // 回传 set-cookie，便于渲染进程拼接 Cookie
         const setCookie = res.headers['set-cookie'] || [];
-        resolve({ success: true, status: res.statusCode, body, setCookie });
+        resolve({ success: true, status: res.statusCode, body: data, setCookie });
       });
     });
     req.on('error', (err) => {
       // 服务未启动 / 连接拒绝等
       resolve({ success: false, message: err.message });
     });
+    if (bodyStr) req.write(bodyStr);
     req.end();
   });
 });

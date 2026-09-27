@@ -1102,7 +1102,7 @@ window.Home = {
 
     // 选择图片并预览
     pickImgBtn.addEventListener('click', async () => {
-      const res = await window.workbench.selectImage();
+      const res = await window.workbench.selectImage(pathInput.value);
       if (res.canceled) return;
       if (res.success && res.dataUrl) {
         imageDataUrl = res.dataUrl;

@@ -55,7 +55,7 @@ contextBridge.exposeInMainWorld('workbench', {
    * 选择本地图片作为快捷方式图标（弹出对话框并转成 data URL）
    * @returns {Promise<{canceled: boolean, path?: string, success?: boolean, dataUrl?: string, message?: string}>}
    */
-  selectImage: () => ipcRenderer.invoke('select-image'),
+  selectImage: (hintPath) => ipcRenderer.invoke('select-image', hintPath),
 
   /**
    * 读取文件关联图标（默认用于 .exe 软件图标）
