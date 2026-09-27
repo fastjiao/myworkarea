@@ -14,6 +14,22 @@
 
 <body data-theme="light">
 
+  <!-- ===================== 自定义窗口外壳 =====================
+       frame:false + transparent:true 后，由 CSS 绘制白色边框 + 圆角 + 阴影。
+       .window-shell 是主内容容器；模态框/右键菜单留在 shell 外（fixed 全屏覆盖）。
+  -->
+  <div class="window-shell">
+
+    <!-- 自定义标题栏：左侧标题（拖拽区）+ 右侧三按钮（最小/最大/关闭） -->
+    <div class="titlebar">
+      <span class="titlebar-title">教公台-阡稻工作室</span>
+      <div class="titlebar-buttons">
+        <button id="win-minimize" class="titlebar-btn" title="最小化" aria-label="最小化"></button>
+        <button id="win-maximize" class="titlebar-btn" title="最大化/还原" aria-label="最大化或还原"></button>
+        <button id="win-close" class="titlebar-btn titlebar-close" title="关闭" aria-label="关闭"></button>
+      </div>
+    </div>
+
   <!--
     科技感背景层（z-index 位于最底层，内容区在其上方）：
     - 渐变蓝灰背景墙
@@ -60,7 +76,7 @@
         </button>
         <button class="nav-item" data-page="netease">
           <span class="nav-icon" data-icon="music"></span>
-          <span class="nav-label">音乐</span>
+          <span class="nav-label">网易云音乐</span>
         </button>
         <!-- 千问：主窗口内嵌 webview 虚拟页面 -->
         <button class="nav-item" data-page="qwen">
@@ -121,6 +137,8 @@
       </div>
       <div class="clock-digital-date" id="clock-date"></div>
     </div>
+  </div>
+
   </div>
 
   <!-- 通用模态框：内容由 JS 动态填充，供添加/编辑表单复用 -->

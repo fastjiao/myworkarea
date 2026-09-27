@@ -322,6 +322,10 @@ function writeData(filename, data) {
 
 // 主窗口引用（托盘恢复窗口使用）
 let mainWindow = null;
+// 自定义最大化状态（transparent 无边框窗口下 win.isMaximized/unmaximize 不可靠，
+// 改用手动标志 + 缓存正常态 bounds + setBounds 切换，见 toggleMaximized）
+let customMaximized = false;
+let normalBounds = null;
 // 「关闭后继续后台运行」状态（与 data/bg-run.json 同步，close 拦截据此判断）
 let backgroundRun = false;
 // 是否正在真正退出（before-quit 置 true，放行 close 事件）
@@ -384,8 +388,12 @@ function createWindow() {
     minWidth: 860,
     minHeight: 600,
     title: '教公台-阡稻工作室',
-    backgroundColor: '#f0f2f5',
-webPreferences: {
+    // 自定义窗口外壳：去掉系统边框/标题栏，由 CSS 绘制白色边框 + 圆角 + 阴影
+    frame: false,
+    transparent: true,      // 窗口背景透明，让 CSS 控制外圈视觉
+    hasShadow: false,       // 关闭系统阴影，改用 CSS box-shadow 自绘（transparent 下系统阴影常失效）
+    maximizable: false,     // 禁用系统最大化（Win+上箭头/拖顶），改由标题栏按钮手动 setBounds 管理，避免透明窗口 isMaximized 状态机不可靠
+    webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
@@ -406,9 +414,76 @@ webPreferences: {
     }
   });
 
+  // 窗口重建时重置手动最大化状态
+  customMaximized = false;
+  normalBounds = null;
+
+  // 限制窗口最大尺寸不超过屏幕工作区：拖拽边缘放大时不会超过屏幕/覆盖任务栏
+  // 手动最大化 toggleMaximized 用 setBounds 到 workArea（正好等于 max，不受影响）
+  // F11 全屏不受 setMaximumSize 限制（fullscreen 是独立行为）
+  const applyMaxSize = () => {
+    try {
+      const { workArea } = screen.getPrimaryDisplay();
+      win.setMaximumSize(workArea.width, workArea.height);
+    } catch (_) { /* 多显示器异常时忽略 */ }
+  };
+  applyMaxSize();
+  screen.on('display-metrics-changed', applyMaxSize);
+  win.on('closed', () => screen.off('display-metrics-changed', applyMaxSize));
+
+  // 全屏（F11）走"最大化"样式：去 padding/圆角/阴影，按钮贴角，四周无间隙
+  // 最大化/还原由 IPC toggleMaximized 手动管理，不依赖系统 maximize 事件
+  win.on('enter-full-screen', () => {
+    if (win.webContents && !win.webContents.isDestroyed()) win.webContents.send('window:maximize-state', true);
+  });
+  win.on('leave-full-screen', () => {
+    if (win.webContents && !win.webContents.isDestroyed()) win.webContents.send('window:maximize-state', false);
+  });
+
   mainWindow = win;
   win.loadFile('index.html');
 }
+
+// ---------------------------------------------------------------------
+// 自定义标题栏窗口控制 IPC（最小/最大/关闭/查询最大化状态）
+// ---------------------------------------------------------------------
+// 🔴 透明无边框窗口（transparent:true + frame:false）在 Windows 上 win.isMaximized/
+//    win.unmaximize 状态机不可靠：setBounds 修正任务栏覆盖后状态与尺寸脱节，
+//    unmaximize 不还原原尺寸。改用手动 setBounds 切换，彻底绕开 Windows 最大化状态机。
+/** 切换主窗口最大化/还原（手动 setBounds，不调 win.maximize/unmaximize） */
+function toggleMaximized() {
+  if (!mainWindow) return false;
+  if (customMaximized) {
+    // 还原到正常态
+    if (normalBounds) mainWindow.setBounds(normalBounds);
+    customMaximized = false;
+  } else {
+    // 最大化到工作区（排除任务栏覆盖）
+    normalBounds = mainWindow.getBounds();
+    try {
+      const { workArea } = screen.getPrimaryDisplay();
+      mainWindow.setBounds({ x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height });
+    } catch (_) { /* 多显示器异常时退回不修正 */ }
+    customMaximized = true;
+  }
+  if (mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send('window:maximize-state', customMaximized);
+  }
+  return customMaximized;
+}
+
+ipcMain.handle('window:minimize', () => { if (mainWindow) mainWindow.minimize(); });
+ipcMain.handle('window:maximize-toggle', () => toggleMaximized());
+ipcMain.handle('window:close', () => { if (mainWindow) mainWindow.close(); });
+ipcMain.handle('window:is-maximized', () => customMaximized);
+// 标题栏手动拖拽：渲染进程发来屏幕坐标增量，主进程 setPosition 移动窗口
+ipcMain.on('window:drag-move', (event, dx, dy) => {
+  if (!mainWindow || customMaximized) return; // 最大化/全屏时不允许拖拽
+  try {
+    const [x, y] = mainWindow.getPosition();
+    mainWindow.setPosition(x + dx, y + dy);
+  } catch (_) {}
+});
 
 // ---------------------------------------------------------------------
 // 抖音 / 千问 / 续火花 窗口与后台自动化

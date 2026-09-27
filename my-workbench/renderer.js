@@ -466,6 +466,80 @@ function initParticles() {
  *   5. 初始化各功能模块
  *   6. 默认进入首页
  */
+// ---------------------------------------------------------------------
+// 自定义标题栏窗口控制：最小/最大/关闭 + 最大化状态同步
+// frame:false 后由渲染进程负责按钮交互，通过 IPC 调主进程
+// ---------------------------------------------------------------------
+function initWindowControls() {
+  const minBtn = document.getElementById('win-minimize');
+  const maxBtn = document.getElementById('win-maximize');
+  const closeBtn = document.getElementById('win-close');
+  if (!minBtn || !maxBtn || !closeBtn) return;
+
+  // 最小化
+  minBtn.addEventListener('click', () => window.workbench.windowMinimize());
+
+  // 最大化/还原（点击切换）
+  maxBtn.addEventListener('click', async () => {
+    await window.workbench.windowMaximizeToggle();
+  });
+
+  // 关闭（受「关闭后继续后台运行」规则约束，主进程会决定是隐藏还是退出）
+  closeBtn.addEventListener('click', () => window.workbench.windowClose());
+
+  // 标题栏：手动拖拽移动窗口 + 双击切换最大化
+  // 🔴 .titlebar 设为 no-drag（drag 区会吞 mousedown 事件），手动实现拖拽 + 双击检测
+  let dragState = null; // { lastMx, lastMy, moved }
+  let lastDown = { time: 0, x: 0, y: 0 };
+  const titlebar = document.querySelector('.titlebar');
+  if (titlebar) {
+    titlebar.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return; // 只处理左键
+      if (e.target.closest('.titlebar-btn')) return; // 排除按钮区域
+      e.preventDefault(); // 阻止双击选词/拖拽默认行为，避免选中文字
+      const now = Date.now();
+      // 双击检测：两次 mousedown 间隔<450ms 且位移<6px
+      if (now - lastDown.time < 450 &&
+          Math.abs(e.clientX - lastDown.x) < 6 &&
+          Math.abs(e.clientY - lastDown.y) < 6) {
+        window.workbench.windowMaximizeToggle();
+        lastDown.time = 0;
+        dragState = null;
+        return;
+      }
+      lastDown = { time: now, x: e.clientX, y: e.clientY };
+      // 开始拖拽（moved 标记是否真的移动过，mouseup 时据此决定是否重置 lastDown）
+      dragState = { lastMx: e.screenX, lastMy: e.screenY, moved: false };
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!dragState) return;
+      const dx = e.screenX - dragState.lastMx;
+      const dy = e.screenY - dragState.lastMy;
+      if (dx !== 0 || dy !== 0) {
+        dragState.moved = true;
+        dragState.lastMx = e.screenX;
+        dragState.lastMy = e.screenY;
+        window.workbench.windowDragMove(dx, dy);
+      }
+    });
+    window.addEventListener('mouseup', () => {
+      // 拖拽过则重置 lastDown.time，避免下次 mousedown 误判双击导致反复放大缩小
+      if (dragState && dragState.moved) lastDown.time = 0;
+      dragState = null;
+    });
+  }
+
+  // 同步初始最大化状态（启动时可能已是最大化）
+  window.workbench.windowIsMaximized().then((isMax) => {
+    document.body.classList.toggle('maximized', !!isMax);
+  });
+
+  // 监听主进程最大化/还原事件，切换 body.maximized 以调整 padding/圆角
+  window.workbench.onWindowMaximizeState((isMax) => {
+    document.body.classList.toggle('maximized', !!isMax);
+  });
+}
+
 async function init() {
   // 1. 加载数据
   try {
@@ -487,6 +561,9 @@ async function init() {
   // 3. 应用主题
   applyTheme(Store.settings.theme || 'system');
 
+  // 3.5 自定义标题栏窗口控制：绑定三按钮 + 同步最大化状态
+  initWindowControls();
+
   // 4. 注册可切换的页面模块
   PAGE_MODULES.dashboard = window.Dashboard;
   PAGE_MODULES.home = window.Home;
@@ -505,9 +582,13 @@ async function init() {
   const sidebarToggle = document.getElementById('sidebar-toggle');
   const sidebarEl = document.querySelector('.sidebar');
   if (sidebarToggle && sidebarEl) {
+    const titlebarEl = document.querySelector('.titlebar');
     sidebarToggle.addEventListener('click', () => {
       sidebarEl.classList.toggle('collapsed');
-      sidebarToggle.title = sidebarEl.classList.contains('collapsed') ? '展开侧边栏' : '收起侧边栏';
+      const collapsed = sidebarEl.classList.contains('collapsed');
+      sidebarToggle.title = collapsed ? '展开侧边栏' : '收起侧边栏';
+      // 同步标题栏 left：收起时跟随侧边栏变窄（64px），展开时回 210px
+      if (titlebarEl) titlebarEl.style.left = collapsed ? '64px' : '210px';
     });
   }
 

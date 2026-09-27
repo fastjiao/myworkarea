@@ -258,5 +258,21 @@ contextBridge.exposeInMainWorld('workbench', {
   /** 【拾取器页面内部用】左键确认 */
   _pickerConfirm: () => ipcRenderer.send('picker:confirm'),
   /** 【拾取器页面内部用】取消拾取 */
-  _pickerCancel: () => ipcRenderer.send('picker:cancel')
+  _pickerCancel: () => ipcRenderer.send('picker:cancel'),
+
+  // ======================== 自定义标题栏窗口控制 ========================
+
+  /** 最小化主窗口 */
+  windowMinimize: () => ipcRenderer.invoke('window:minimize'),
+  /** 切换最大化/还原，返回切换后是否处于最大化 */
+  windowMaximizeToggle: () => ipcRenderer.invoke('window:maximize-toggle'),
+  /** 关闭主窗口（受「关闭后继续后台运行」拦截规则约束） */
+  windowClose: () => ipcRenderer.invoke('window:close'),
+  /** 查询当前是否处于最大化状态 */
+  windowIsMaximized: () => ipcRenderer.invoke('window:is-maximized'),
+  /** 订阅主窗口最大化/还原事件（用于切换 body.maximized 样式） */
+  onWindowMaximizeState: (callback) => ipcRenderer.on('window:maximize-state', (event, isMax) => callback(isMax)),
+
+  /** 拖拽移动窗口（标题栏手动拖拽，dx/dy 为屏幕坐标增量） */
+  windowDragMove: (dx, dy) => ipcRenderer.send('window:drag-move', dx, dy)
 });

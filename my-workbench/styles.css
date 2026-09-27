@@ -50,6 +50,11 @@
   --bg-primary: #ffffff;
   --bg-secondary: #F0F4FF;
   --text-primary: #2F3E66;
+  /* 自定义窗口外壳：标题栏背景/文字 + 外圈描边 */
+  --titlebar-bg: rgba(255, 255, 255, 0.92);
+  --titlebar-text: #2F3E66;
+  --window-border: rgba(47, 62, 102, 0.12);
+  --window-shadow: 0 10px 40px rgba(47, 62, 102, 0.18);
 }
 
 [data-theme="dark"] {
@@ -82,6 +87,11 @@
   --bg-primary: #1E2639;
   --bg-secondary: #232D45;
   --text-primary: #E8EDF8;
+  /* 暗色窗口外壳 */
+  --titlebar-bg: rgba(30, 38, 57, 0.92);
+  --titlebar-text: #E8EDF8;
+  --window-border: rgba(169, 194, 255, 0.14);
+  --window-shadow: 0 10px 40px rgba(0, 0, 0, 0.55);
 }
 
 /* ---------------------------------------------------------------------
@@ -104,16 +114,129 @@ body {
 
 body {
   font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
-  background: var(--bg);
+  background: transparent; /* 窗口透明（transparent:true），由 .window-shell 提供白底/圆角/阴影 */
   color: var(--text);
   overflow: hidden;
+  padding: 8px; /* 给外圈白色边框与阴影留出空间 */
+  transition: padding 0.18s ease; /* 最大化/还原时外边距平滑过渡 */
+}
+
+/* 最大化时取消外边距，让 .window-shell 填满工作区 */
+body.maximized {
+  padding: 0;
+}
+
+/* ---------------------------------------------------------------------
+   自定义窗口外壳：白色边框 + 圆角 + 阴影
+   frame:false + transparent:true 后，由该容器承担原系统边框的视觉角色
+   --------------------------------------------------------------------- */
+.window-shell {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%; /* 填满 body 内容区（body 已留 padding 8px） */
+  background: var(--bg);
+  border-radius: 10px;
+  overflow: hidden; /* 裁剪内部 .tech-backdrop / .app-layout 到圆角内 */
+  box-shadow: 0 0 0 1px var(--window-border), var(--window-shadow);
+  transition: border-radius 0.18s ease, box-shadow 0.18s ease; /* 最大化/还原时圆角↔直角、阴影↔无阴影平滑过渡 */
+}
+
+/* 最大化时取消圆角与阴影（窗口已填满工作区，无需装饰） */
+body.maximized .window-shell {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* 最大化/全屏时标题栏右贴边，让关闭按钮落在屏幕右上角（Windows 标准）
+   正常模式保留 padding-right:8px 让按钮避开圆角；最大化无圆角，贴边 */
+body.maximized .titlebar {
+  padding-right: 0;
+}
+
+/* 自定义标题栏：透明叠加在内容之上，与主内容区融为一体（EchoMusic 风格）
+   不占独立视觉空间，仅承载拖拽区 + 右侧窗口按钮 */
+.titlebar {
+  position: absolute;
+  top: 0;
+  left: 210px; /* 只覆盖主内容区顶部，不覆盖侧边栏（让侧边栏内容可向上移到顶部） */
+  right: 0;
+  height: 36px;
+  padding: 0 8px 0 14px;
+  background: transparent; /* 透明，让侧边栏/主内容区背景延伸到顶部 */
+  -webkit-app-region: no-drag; /* 手动拖拽+双击检测（drag 区会吞 mousedown 事件，无法检测手势） */
+  user-select: none; /* 禁止双击选中标题栏文字 */
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end; /* 按钮靠右，左侧留空给侧边栏品牌 */
+  transition: left 0.2s ease, padding 0.18s ease; /* 与侧边栏收起/展开动画同步 + 最大化时 padding-right 平滑过渡 */
+}
+
+/* 标题文字隐藏（EchoMusic 风格：标题栏不显示标题，品牌在侧边栏） */
+.titlebar-title {
+  display: none;
+}
+
+.titlebar-buttons {
+  display: flex;
+  -webkit-app-region: no-drag; /* 按钮区域可点击，不触发拖拽 */
+}
+
+/* Windows 风格三按钮：最小化 ─ / 最大化 □ / 关闭 ✕ */
+.titlebar-btn {
+  width: 46px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--titlebar-text);
+  transition: background 0.15s, color 0.15s;
+}
+
+.titlebar-btn:hover {
+  background: rgba(127, 127, 127, 0.18);
+}
+
+/* 最小化图标：一条横线 */
+#win-minimize::before {
+  content: '';
+  width: 10px;
+  height: 1px;
+  background: currentColor;
+}
+
+/* 最大化图标：方框 */
+#win-maximize::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border: 1px solid currentColor;
+  box-sizing: border-box;
+}
+
+/* 关闭图标：✕ */
+#win-close::before {
+  content: '✕';
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* 关闭按钮悬停：Windows 经典红色 */
+.titlebar-close:hover {
+  background: #E81123;
+  color: #fff;
 }
 
 /* ---------------------------------------------------------------------
    科技感背景层（渐变蓝灰墙 + 全息网格 + 微光粒子 / 动态数据流）
    --------------------------------------------------------------------- */
 .tech-backdrop {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 0;
   overflow: hidden;
@@ -167,7 +290,8 @@ body {
   position: relative;
   z-index: 1;
   display: flex;
-  height: 100vh;
+  flex: 1; /* 填满 .window-shell 剩余空间（扣除 .titlebar 36px） */
+  min-height: 0; /* 允许 flex 子元素收缩，防止内容溢出圆角 */
 }
 
 .main-area {
@@ -190,7 +314,7 @@ body {
   color: var(--sidebar-text);
   display: flex;
   flex-direction: column;
-  padding: 20px 0;
+  padding: 10px 0 20px; /* 顶部 10px 间隙（标题栏不覆盖侧边栏，内容可上移到顶部） */
   /* 收起/展开时宽度平滑过渡，主内容区 flex:1 自动跟随扩大 */
   transition: width 0.2s ease;
 }
@@ -204,9 +328,8 @@ body {
   font-weight: 700;
   color: #ffffff;
   padding: 0 16px 24px;
-  white-space: nowrap;
-  /* 品牌发光：科技浅蓝光晕 */
-  text-shadow: 0 0 18px rgba(169, 194, 255, 0.65);
+  white-space:$ nowrap;
+  /* 品牌发光已移除：原 text-shadow 浅蓝光晕在文字下方扩散成白色底纹 */
 }
 
 /* 品牌文字：超长时省略号截断，收起时由 .sidebar.collapsed 隐藏 */
@@ -372,7 +495,7 @@ body {
 .app-main {
   flex: 1;
   overflow-y: auto;
-  padding: 24px;
+  padding: 60px 24px 24px; /* 顶部 60px = 标题栏 36px + 原 24px，让主内容从标题栏下方开始 */
 }
 
 .page {
@@ -387,7 +510,7 @@ body {
    改用 flex 撑开（避免 height:100% 百分比高度链依赖），
    切到内嵌页面时 .app-main 变为纵向 flex，.page-embed 占据全部剩余空间 */
 .app-main:has(.page-embed.active) {
-  padding: 0;
+  padding: 36px 0 0; /* 顶部 36px = 标题栏高度，webview 从标题栏下方铺满 */
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -1987,8 +2110,8 @@ details.sign-advanced .form-item {
            保证时钟区域始终可点击，不影响标题栏其余区域的窗口拖拽。
    ===================================================================== */
 .clock-widget {
-  position: fixed;
-  top: 14px;
+  position: absolute;
+  top: 50px; /* 避开自定义标题栏（36px）+ 14px 间距 */
   right: 16px;
   z-index: 50; /* 低于右键菜单(100)/模态框(200)/Toast(300)，高于背景层 */
   -webkit-app-region: no-drag; /* Electron 拖拽区适配：保证可点击 */
