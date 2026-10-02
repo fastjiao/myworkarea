@@ -189,6 +189,45 @@ const UI = {
     this._toastTimer = setTimeout(() => el.classList.remove('show'), duration);
   },
 
+  /**
+   * 设置按钮 Loading 加载中态：前置转圈 + 文字切换 + 锁交互防重复提交
+   * @param {HTMLButtonElement} btn 按钮元素
+   * @param {boolean} loading 是否进入加载态
+   * @param {string} [loadingText] 加载态文字（默认"处理中…"）
+   */
+  setBtnLoading(btn, loading, loadingText = '处理中…') {
+    if (!btn) return;
+    if (loading) {
+      if (!btn.dataset.btnLoading) {
+        btn.dataset.btnLoading = '1';
+        btn.dataset.btnOriginHtml = btn.innerHTML;
+      }
+      btn.textContent = loadingText;
+      btn.classList.add('is-loading');
+      btn.disabled = true;
+    } else {
+      if (btn.dataset.btnLoading) {
+        btn.innerHTML = btn.dataset.btnOriginHtml;
+        delete btn.dataset.btnLoading;
+        delete btn.dataset.btnOriginHtml;
+      }
+      btn.classList.remove('is-loading');
+      btn.disabled = false;
+    }
+  },
+
+  /**
+   * 设置按钮 Disabled 禁用态：降饱和 + 透明度 45%
+   * @param {HTMLButtonElement} btn 按钮元素
+   * @param {boolean} disabled 是否禁用
+   */
+  setBtnDisabled(btn, disabled) {
+    if (!btn) return;
+    btn.disabled = disabled;
+    if (disabled) btn.classList.add('is-disabled');
+    else btn.classList.remove('is-disabled');
+  },
+
   // ---------- 模态框 ----------
 
   /**

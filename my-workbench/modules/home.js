@@ -780,29 +780,34 @@ window.Home = {
         UI.setToast('请先勾选要添加的软件', 'error');
         return;
       }
-      const toAdd = allApps.filter((a) => selected.has(a.path.toLowerCase()));
-      const ts = Date.now();
-      const newItems = toAdd.map((a, i) => ({
-        id: 'shortcut-' + ts + '-' + i,
-        type: 'app',
-        name: a.name,
-        iconType: 'auto',
-        icon: '',
-        path: a.path
-      }));
-      Store.apps.push(...newItems);
-      const saved = await Store.saveApps();
-      if (saved && saved.success === false) {
-        // 保存失败：回滚
-        newItems.forEach((item) => {
-          const idx = Store.apps.indexOf(item);
-          if (idx >= 0) Store.apps.splice(idx, 1);
-        });
-        return UI.setToast('添加失败：' + saved.message, 'error');
+      UI.setBtnLoading(addBtn, true, '添加中…');
+      try {
+        const toAdd = allApps.filter((a) => selected.has(a.path.toLowerCase()));
+        const ts = Date.now();
+        const newItems = toAdd.map((a, i) => ({
+          id: 'shortcut-' + ts + '-' + i,
+          type: 'app',
+          name: a.name,
+          iconType: 'auto',
+          icon: '',
+          path: a.path
+        }));
+        Store.apps.push(...newItems);
+        const saved = await Store.saveApps();
+        if (saved && saved.success === false) {
+          // 保存失败：回滚
+          newItems.forEach((item) => {
+            const idx = Store.apps.indexOf(item);
+            if (idx >= 0) Store.apps.splice(idx, 1);
+          });
+          return UI.setToast('添加失败：' + saved.message, 'error');
+        }
+        UI.closeModal();
+        Store.notify();
+        UI.setToast('已添加 ' + newItems.length + ' 个软件', 'success');
+      } finally {
+        UI.setBtnLoading(addBtn, false);
       }
-      UI.closeModal();
-      Store.notify();
-      UI.setToast('已添加 ' + newItems.length + ' 个软件', 'success');
     });
 
     // 首次渲染并打开模态框
@@ -981,15 +986,20 @@ window.Home = {
         return;
       }
       if (!confirm('确定删除选中的 ' + selected.size + ' 个快捷方式吗？')) return;
-      const ids = new Set(selected);
-      Store.apps = Store.apps.filter((a) => !ids.has(a.id));
-      const saved = await Store.saveApps();
-      if (saved && saved.success === false) {
-        return UI.setToast('删除失败：' + saved.message, 'error');
+      UI.setBtnLoading(deleteBtn, true, '删除中…');
+      try {
+        const ids = new Set(selected);
+        Store.apps = Store.apps.filter((a) => !ids.has(a.id));
+        const saved = await Store.saveApps();
+        if (saved && saved.success === false) {
+          return UI.setToast('删除失败：' + saved.message, 'error');
+        }
+        UI.closeModal();
+        Store.notify();
+        UI.setToast('已删除 ' + ids.size + ' 个快捷方式', 'success');
+      } finally {
+        UI.setBtnLoading(deleteBtn, false);
       }
-      UI.closeModal();
-      Store.notify();
-      UI.setToast('已删除 ' + ids.size + ' 个快捷方式', 'success');
     });
 
     // 添加文件快捷方式：调用系统文件对话框选择任意文件，按扩展名判定类型
@@ -1220,38 +1230,43 @@ window.Home = {
         if (!icon) iconType = 'auto';
       }
 
-      // 修改模式：更新原条目
-      if (editing) {
-        const prev = Object.assign({}, editItem);
-        Object.assign(editItem, { type: typeSelect.value, name, iconType, icon, path: pathVal });
+      UI.setBtnLoading(submitBtn, true, '保存中…');
+      try {
+        // 修改模式：更新原条目
+        if (editing) {
+          const prev = Object.assign({}, editItem);
+          Object.assign(editItem, { type: typeSelect.value, name, iconType, icon, path: pathVal });
+          const saved = await Store.saveApps();
+          if (saved && saved.success === false) {
+            Object.assign(editItem, prev);
+            return UI.setToast('修改失败：' + saved.message, 'error');
+          }
+          UI.closeModal();
+          Store.notify();
+          UI.setToast('已修改「' + name + '」', 'success');
+          return;
+        }
+
+        const item = {
+          id: 'shortcut-' + Date.now(),
+          type: typeSelect.value,
+          name,
+          iconType,
+          icon,
+          path: pathVal
+        };
+        Store.apps.push(item);
         const saved = await Store.saveApps();
         if (saved && saved.success === false) {
-          Object.assign(editItem, prev);
-          return UI.setToast('修改失败：' + saved.message, 'error');
+          Store.apps.pop();
+          return UI.setToast('添加失败：' + saved.message, 'error');
         }
         UI.closeModal();
         Store.notify();
-        UI.setToast('已修改「' + name + '」', 'success');
-        return;
+        UI.setToast('已添加「' + name + '」', 'success');
+      } finally {
+        UI.setBtnLoading(submitBtn, false);
       }
-
-      const item = {
-        id: 'shortcut-' + Date.now(),
-        type: typeSelect.value,
-        name,
-        iconType,
-        icon,
-        path: pathVal
-      };
-      Store.apps.push(item);
-      const saved = await Store.saveApps();
-      if (saved && saved.success === false) {
-        Store.apps.pop();
-        return UI.setToast('添加失败：' + saved.message, 'error');
-      }
-      UI.closeModal();
-      Store.notify();
-      UI.setToast('已添加「' + name + '」', 'success');
     });
 
     UI.openModal(editing ? '修改快捷方式' : '添加快捷方式', form);

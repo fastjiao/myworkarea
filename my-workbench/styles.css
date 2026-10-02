@@ -650,6 +650,7 @@ body.maximized .titlebar {
 
 .btn-primary:hover {
   background: var(--primary-hover);
+  box-shadow: 0 6px 18px rgba(95, 134, 255, 0.45);
 }
 
 .btn-ghost {
@@ -667,6 +668,61 @@ body.maximized .titlebar {
   font-size: 12px;
   border-radius: 6px;
 }
+
+/* ===== 按钮 5 状态系统（Default / Hover / Pressed / Disabled / Loading） =====
+   一个能直接进开发流程的按钮，至少要画全 5 个状态：
+   1 Default  默认态——主视觉（品牌色渐变 + 光晕），点击区域高度 ≥ 44px
+   2 Hover    悬停态——比默认态加深 8%~10%，提示"这个可以点"
+   3 Pressed  按下态——再深一级 + 轻微缩小到 98%，即时按压反馈
+   4 Disabled 禁用态——降饱和 + 透明度 45%（别砍到 0.2，太浅会以为坏了）
+   5 Loading  加载中——转圈 + "处理中…"，锁住交互防重复提交
+   状态颜色变化规律：default → hover(+8~10%) → pressed(再深一级) */
+
+/* Pressed 按下态：通用缩放到 98% 给即时按压反馈 */
+.btn:active:not(:disabled):not(.is-loading),
+.settings-btn:active:not(:disabled):not(.is-loading) {
+  transform: scale(0.98);
+}
+
+/* Pressed 按下态：主按钮再深一级 + 收敛光晕 */
+.btn-primary:active:not(:disabled):not(.is-loading) {
+  filter: brightness(0.92);
+  box-shadow: 0 2px 8px rgba(95, 134, 255, 0.3);
+}
+
+/* Disabled 禁用态：降饱和 + 透明度 45%，不可交互 */
+.btn:disabled, .btn.is-disabled,
+.settings-btn:disabled, .settings-btn.is-disabled {
+  filter: saturate(0.4);
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+  box-shadow: none;
+  transform: none;
+}
+
+/* Loading 加载中：锁住交互防重复提交，前置转圈 */
+.btn.is-loading,
+.settings-btn.is-loading {
+  cursor: wait;
+  pointer-events: none;
+  opacity: 0.9;
+}
+.btn.is-loading::before,
+.settings-btn.is-loading::before {
+  content: '';
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 4px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  opacity: 0.75;
+  animation: btn-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
 
 .text-danger {
   color: var(--danger);

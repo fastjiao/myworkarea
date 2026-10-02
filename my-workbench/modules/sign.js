@@ -495,44 +495,49 @@ window.Sign = {
       const cookie = cookieInput.value.trim();
       if (!cookie) { UI.setToast('请先点「一键登录」获取登录状态', 'error'); return; }
 
-      const wps = templateSelect.value === 'wps';
-      let data;
+      UI.setBtnLoading(saveBtn, true, '保存中…');
+      try {
+        const wps = templateSelect.value === 'wps';
+        let data;
 
-      if (wps) {
-        // WPS 专用签到：只需名称 + Cookie
-        data = { taskType: 'wps', name, cookie };
-      } else {
-        // 自定义 HTTP 接口签到
-        const url = urlInput.value.trim();
-        if (!url) { UI.setToast('请填写签到接口地址', 'error'); return; }
-        if (!/^https?:\/\//i.test(url)) { UI.setToast('网址需以 http:// 或 https:// 开头', 'error'); return; }
-        data = {
-          taskType: 'web',
-          name,
-          url,
-          method: methodSelect.value,
-          cookie,
-          extraHeaders: headerInput.value.trim(),
-          body: bodyInput.value.trim(),
-          successType: ruleSelect.value,
-          successStatus: parseInt(statusInput.value, 10) || 200,
-          successField: fieldInput.value.trim() || 'code',
-          successValue: valueInput.value.trim()
-        };
+        if (wps) {
+          // WPS 专用签到：只需名称 + Cookie
+          data = { taskType: 'wps', name, cookie };
+        } else {
+          // 自定义 HTTP 接口签到
+          const url = urlInput.value.trim();
+          if (!url) { UI.setToast('请填写签到接口地址', 'error'); return; }
+          if (!/^https?:\/\//i.test(url)) { UI.setToast('网址需以 http:// 或 https:// 开头', 'error'); return; }
+          data = {
+            taskType: 'web',
+            name,
+            url,
+            method: methodSelect.value,
+            cookie,
+            extraHeaders: headerInput.value.trim(),
+            body: bodyInput.value.trim(),
+            successType: ruleSelect.value,
+            successStatus: parseInt(statusInput.value, 10) || 200,
+            successField: fieldInput.value.trim() || 'code',
+            successValue: valueInput.value.trim()
+          };
+        }
+
+        if (editing) {
+          // 编辑时清理旧字段（如从自定义切换到 WPS）
+          Object.keys(task).forEach((k) => { if (!(k in data) && k !== 'id' && k !== 'lastSignDate') delete task[k]; });
+          Object.assign(task, data);
+        } else {
+          this._tasks.push({ id: 'sign-' + Date.now(), ...data, lastSignDate: null });
+        }
+
+        await this._persist();
+        UI.closeModal();
+        this.render();
+        UI.setToast(editing ? '已保存' : '已添加', 'success');
+      } finally {
+        UI.setBtnLoading(saveBtn, false);
       }
-
-      if (editing) {
-        // 编辑时清理旧字段（如从自定义切换到 WPS）
-        Object.keys(task).forEach((k) => { if (!(k in data) && k !== 'id' && k !== 'lastSignDate') delete task[k]; });
-        Object.assign(task, data);
-      } else {
-        this._tasks.push({ id: 'sign-' + Date.now(), ...data, lastSignDate: null });
-      }
-
-      await this._persist();
-      UI.closeModal();
-      this.render();
-      UI.setToast(editing ? '已保存' : '已添加', 'success');
     });
 
     UI.openModal(editing ? '编辑签到任务' : '添加签到任务', form);

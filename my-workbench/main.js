@@ -476,12 +476,20 @@ ipcMain.handle('window:minimize', () => { if (mainWindow) mainWindow.minimize();
 ipcMain.handle('window:maximize-toggle', () => toggleMaximized());
 ipcMain.handle('window:close', () => { if (mainWindow) mainWindow.close(); });
 ipcMain.handle('window:is-maximized', () => customMaximized);
-// 标题栏手动拖拽：渲染进程发来屏幕坐标增量，主进程 setPosition 移动窗口
+// 标题栏手动拖拽：渲染进程发来屏幕坐标增量，主进程移动窗口
+// 🔴 transparent 无边框窗口下 setBounds 后 Windows DWM 会把尺寸 round up（实测每次 +1px），
+//    若每次用 getBounds() 的尺寸做下次基准会累积放大（窗口越拖越大）。
+//    解决：拖拽期间锁定首次尺寸，全程复用固定值，拖拽停顿 300ms 后释放锁。
+let dragFixedSize = null;
+let dragFixedTimer = null;
 ipcMain.on('window:drag-move', (event, dx, dy) => {
   if (!mainWindow || customMaximized) return; // 最大化/全屏时不允许拖拽
   try {
-    const [x, y] = mainWindow.getPosition();
-    mainWindow.setPosition(x + dx, y + dy);
+    const b = mainWindow.getBounds();
+    if (!dragFixedSize) dragFixedSize = { w: b.width, h: b.height };
+    mainWindow.setBounds({ x: b.x + dx, y: b.y + dy, width: dragFixedSize.w, height: dragFixedSize.h });
+    clearTimeout(dragFixedTimer);
+    dragFixedTimer = setTimeout(() => { dragFixedSize = null; }, 300);
   } catch (_) {}
 });
 

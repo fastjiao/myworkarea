@@ -234,6 +234,7 @@ window.SettingsWidget = {
       const newSc = {};
       Object.keys(shortcutInputs).forEach((k) => { newSc[k] = shortcutInputs[k].dataset.code; });
       Store.settings.neteaseShortcuts = newSc;
+      UI.setBtnLoading(saveBtn, true, '保存中…');
       try {
         await Store.saveSettings();
         if (typeof window.Netease._saveLocalData === 'function') {
@@ -242,6 +243,8 @@ window.SettingsWidget = {
         UI.setToast('已保存网易云设置', 'success');
       } catch (e) {
         UI.setToast('保存失败：' + e.message, 'error');
+      } finally {
+        UI.setBtnLoading(saveBtn, false);
       }
     });
     actions.appendChild(saveBtn);
@@ -364,12 +367,15 @@ window.SettingsWidget = {
     const runBtn = UI.el('button', 'settings-btn secondary', '立即执行一次');
     runBtn.type = 'button';
     runBtn.addEventListener('click', async () => {
+      UI.setBtnLoading(runBtn, true, '执行中…');
       try {
         UI.setToast('正在执行续火花…', 'info');
         const r = await window.workbench.fireSparkRun();
         UI.setToast(r.message, r.success ? 'success' : 'error', 4000);
       } catch (e) {
         UI.setToast('执行失败：' + e.message, 'error');
+      } finally {
+        UI.setBtnLoading(runBtn, false);
       }
     });
     actions.appendChild(runBtn);
@@ -389,12 +395,15 @@ window.SettingsWidget = {
         newConfig.selectors[key] = selectorInputs[key].value.trim();
       });
       const newMessages = msgArea.value.split('\n').map((s) => s.trim()).filter((s) => s.length > 0);
+      UI.setBtnLoading(saveBtn, true, '保存中…');
       try {
         await window.workbench.fireSparkSaveConfig(newConfig);
         await window.workbench.fireSparkSaveMessages(newMessages);
         UI.setToast('续火花配置已保存', 'success');
       } catch (e) {
         UI.setToast('保存失败：' + e.message, 'error');
+      } finally {
+        UI.setBtnLoading(saveBtn, false);
       }
     });
     actions.appendChild(saveBtn);
