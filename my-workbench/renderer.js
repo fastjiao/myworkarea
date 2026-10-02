@@ -386,7 +386,7 @@ function initParticles() {
 
   /** 生成一批粒子（数量随屏幕面积自适应） */
   function spawn() {
-    const count = Math.min(90, Math.round((width * height) / 18000));
+    const count = Math.min(50, Math.round((width * height) / 30000));
     particles = [];
     for (let i = 0; i < count; i++) {
       particles.push(makeParticle(true));
@@ -413,8 +413,14 @@ function initParticles() {
     };
   }
 
-  /** 逐帧绘制粒子 */
+  /** 逐帧绘制粒子（限帧 30fps，降低 CPU/GPU 占用） */
+  let lastDraw = 0;
+  const FRAME_INTERVAL = 1000 / 30;
   function step() {
+    rafId = requestAnimationFrame(step);
+    const now = performance.now();
+    if (now - lastDraw < FRAME_INTERVAL) return;
+    lastDraw = now;
     ctx.clearRect(0, 0, width, height);
     for (let i = 0; i < particles.length; i++) {
       const p = particles[i];
@@ -442,14 +448,29 @@ function initParticles() {
       ctx.fillStyle = 'rgba(' + r + ', ' + g + ', ' + b + ', ' + a + ')';
       ctx.fill();
     }
-    rafId = requestAnimationFrame(step);
   }
 
   resize();
   window.addEventListener('resize', resize);
 
-  if (!reduceMotion) {
+  // 页面隐藏（最小化/切后台）时暂停动画，避免持续占用 CPU 耗电
+  function startParticles() {
+    if (rafId != null || reduceMotion) return;
     rafId = requestAnimationFrame(step);
+  }
+  function stopParticles() {
+    if (rafId != null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopParticles();
+    else startParticles();
+  });
+
+  if (!reduceMotion && !document.hidden) {
+    startParticles();
   }
 }
 

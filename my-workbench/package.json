@@ -47,8 +47,7 @@
       "index.html",
       "styles.css",
       "modules/**/*",
-      "data/**/*",
-      "node_modules/**/*"
+      "data/**/*"
     ],
     "extraResources": [
       {

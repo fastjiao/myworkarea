@@ -26,6 +26,8 @@ window.ClockWidget = {
   _lastDate: '',
   // requestAnimationFrame 句柄
   _rafId: null,
+  // setInterval 句柄（数字模式 / reduceMotion 时用 1s 定时器代替 rAF）
+  _intervalId: null,
   // 系统是否要求减少动态效果
   _reduceMotion: false,
   // 拖拽状态
@@ -110,12 +112,41 @@ window.ClockWidget = {
     // 6. 窗口尺寸变化时，把组件重新约束回可视区域内
     window.addEventListener('resize', () => this._restorePosition());
 
-    // 7. 启动逐帧刷新循环
-    const step = () => {
-      this._tick();
+    // 7. 启动刷新循环（按模式选择 rAF 或 setInterval，降低 CPU 占用）
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this._stopLoop();
+      else this._startLoop();
+    });
+    if (!document.hidden) this._startLoop();
+  },
+
+  /** 根据当前模式启动合适的刷新循环 */
+  _startLoop() {
+    this._stopLoop();
+    // 仅「模拟时钟 + 非 reduceMotion」需要 rAF 平滑秒针；其余用 1s 定时器即可
+    const needRaf = this._mode === 'analog' && !this._reduceMotion;
+    if (needRaf) {
+      const step = () => {
+        this._tick();
+        this._rafId = requestAnimationFrame(step);
+      };
       this._rafId = requestAnimationFrame(step);
-    };
-    this._rafId = requestAnimationFrame(step);
+    } else {
+      this._tick();
+      this._intervalId = setInterval(() => this._tick(), 1000);
+    }
+  },
+
+  /** 停止当前刷新循环 */
+  _stopLoop() {
+    if (this._rafId != null) {
+      cancelAnimationFrame(this._rafId);
+      this._rafId = null;
+    }
+    if (this._intervalId != null) {
+      clearInterval(this._intervalId);
+      this._intervalId = null;
+    }
   },
 
   // -------------------------------------------------------------------
@@ -131,6 +162,8 @@ window.ClockWidget = {
     this._root.dataset.mode = this._mode;
     // 记忆用户偏好（如需关闭持久化，注释下面这行即可）
     try { localStorage.setItem(this._STORAGE_KEY, this._mode); } catch (e) { /* 忽略 */ }
+    // 模式切换可能需要更换刷新循环（rAF ↔ setInterval）
+    if (!document.hidden) this._startLoop();
   },
 
   // -------------------------------------------------------------------
