@@ -1422,6 +1422,12 @@ body.maximized .titlebar {
   border: 1px solid rgba(0, 128, 0, 0.3);
 }
 
+.sign-type-uia {
+  background: rgba(0, 150, 136, 0.15);
+  color: #009688;
+  border: 1px solid rgba(0, 150, 136, 0.3);
+}
+
 .sign-type-desktop {
   background: rgba(168, 85, 247, 0.15);
   color: #a855f7;

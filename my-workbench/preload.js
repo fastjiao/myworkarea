@@ -218,6 +218,22 @@ contextBridge.exposeInMainWorld('workbench', {
   executeDesktopSign: (params) => ipcRenderer.invoke('sign:execute-desktop', params),
 
   /**
+   * UI Automation 签到（不碰鼠标，通过 Windows UIA 程序化 Invoke 按钮）
+   * @param {{
+   *   exePath?: string,               // 可执行文件路径（不填则假定程序已运行）
+   *   exeArgs?: string[],
+   *   launchDelay?: number,
+   *   waitMode?: 'auto'|'fixed',
+   *   waitWindowTitle?: string,
+   *   waitTimeout?: number,
+   *   procName?: string,              // 进程名（不带 .exe），不填则从 exePath 推导
+   *   closeAfterSign?: boolean
+   * }} params
+   * @returns {Promise<{success: boolean, message: string, results?: Array}>}
+   */
+  executeUiaSign: (params) => ipcRenderer.invoke('sign:execute-uia', params),
+
+  /**
    * 获取内置 PowerShell 脚本模板
    * @returns {Promise<Array<{id: string, name: string, desc: string, script: string}>>}
    */

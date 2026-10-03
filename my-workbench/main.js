@@ -2522,6 +2522,111 @@ ipcMain.handle('sign:execute-desktop', async (event, {
 });
 
 // ---------------------------------------------------------------------
+// UI Automation 签到（不碰鼠标，通过 Windows UIA 程序化触发按钮 Invoke）
+// 适用：Wails/WebView2、Electron 等 UIA 可访问的桌面应用
+// 优势：无需 PowerShell、不移动鼠标、不抢焦点、客户端自己生成安全校验
+// ---------------------------------------------------------------------
+
+ipcMain.handle('sign:execute-uia', async (event, {
+  exePath,
+  exeArgs = [],
+  launchDelay = 3000,
+  waitMode = 'auto',
+  waitWindowTitle = '',
+  waitTimeout = 30000,
+  procName = '',           // 进程名（不带 .exe），不填则从 exePath 推导
+  closeAfterSign = false
+}) => {
+  const results = [];
+  let targetProc = procName;
+
+  // --- 步骤 1：检测/启动目标程序 ---
+  if (exePath) {
+    if (!fs.existsSync(exePath)) {
+      return { success: false, message: '可执行文件不存在：' + exePath };
+    }
+    const exeName = path.basename(exePath);
+    if (!targetProc) targetProc = exeName.replace(/\.exe$/i, '');
+
+    const running = await isProcessRunning(exeName);
+    if (running) {
+      results.push({ step: 'launch', success: true, alreadyRunning: true, message: '程序已在运行' });
+    } else {
+      const launchRes = await launchExe(exePath, exeArgs);
+      results.push({ step: 'launch', ...launchRes });
+      if (!launchRes.success) {
+        return { success: false, message: '启动失败：' + launchRes.message, results };
+      }
+    }
+
+    // --- 步骤 2：等待程序就绪 ---
+    if (waitMode === 'auto') {
+      const waitRes = await runPowerShell(
+        buildWaitReadyScript(targetProc, waitWindowTitle, waitTimeout),
+        waitTimeout + 10000
+      );
+      results.push({ step: 'wait', ...waitRes });
+    } else {
+      await new Promise(r => setTimeout(r, launchDelay));
+      results.push({ step: 'wait', success: true, message: '固定等待 ' + launchDelay + 'ms' });
+    }
+  }
+
+  if (!targetProc) {
+    return { success: false, message: '未指定目标进程名，且无法从 exePath 推导', results };
+  }
+
+  // --- 步骤 3：运行 UIA 签到 helper ---
+  const helperPath = path.join(DATA_DIR, 'uia', 'uia-checkin.exe');
+  if (!fs.existsSync(helperPath)) {
+    return { success: false, message: 'UIA helper 不存在：' + helperPath, results };
+  }
+
+  const uiaResult = await new Promise((resolve) => {
+    try {
+      const { execFile } = require('child_process');
+      const child = execFile(helperPath, [targetProc], {
+        timeout: 60000,
+        windowsHide: true,
+        maxBuffer: 1024 * 1024
+      }, (err, stdout, stderr) => {
+        if (err && err.killed) {
+          resolve({ success: false, message: 'UIA helper 执行超时（60s）' });
+          return;
+        }
+        const out = (stdout || '').trim();
+        try {
+          const parsed = JSON.parse(out);
+          resolve(parsed);
+        } catch (e) {
+          resolve({ success: false, message: 'UIA helper 输出解析失败: ' + out.slice(0, 200) });
+        }
+      });
+    } catch (err) {
+      resolve({ success: false, message: '启动 UIA helper 失败: ' + err.message });
+    }
+  });
+
+  results.push({ step: 'uia-checkin', ...uiaResult });
+
+  // --- 步骤 4：签到后自动关闭目标程序 ---
+  if (closeAfterSign && exePath) {
+    await new Promise(r => setTimeout(r, 1500));
+    const closeRes = await runPowerShell(buildCloseScript(targetProc), 10000);
+    results.push({ step: 'close', ...closeRes });
+  }
+
+  const success = uiaResult.success && results.every(r => r.step !== 'close' || r.success);
+  const parts = [];
+  const launched = results.find(r => r.step === 'launch');
+  if (launched?.alreadyRunning) parts.push('程序已在运行');
+  else if (exePath) parts.push('程序已启动');
+  parts.push(uiaResult.message || (uiaResult.success ? '签到成功' : '签到失败'));
+
+  return { success, message: parts.join('，'), results };
+});
+
+// ---------------------------------------------------------------------
 // 坐标拾取器（全屏透明置顶窗口，鼠标点哪就抓哪个屏幕坐标）
 // ---------------------------------------------------------------------
 
@@ -2821,6 +2926,53 @@ if (!gotTheLock) {
   });
 }
 
+/**
+ * 自动检测 Hyperdown 安装并预置 UIA 签到任务（开箱即用）
+ * 扫描常见安装路径，找到且尚无对应任务时自动添加一条 UIA 签到任务
+ */
+function autoDetectHyperdownSignTask() {
+  try {
+    const tasks = readData('sign-tasks.json');
+    // 已有 Hyperdown UIA 任务则跳过
+    if (Array.isArray(tasks) && tasks.some(t => t.taskType === 'uia' && t.name && t.name.indexOf('Hyperdown') >= 0)) {
+      return;
+    }
+
+    // 常见安装路径（按优先级排列）
+    const candidates = [
+      'D:\\DDL\\Hyperdown\\Hyperdown.exe',
+      'C:\\Program Files\\Hyperdown\\Hyperdown.exe',
+      'C:\\Program Files (x86)\\Hyperdown\\Hyperdown.exe',
+      path.join(process.env.LOCALAPPDATA || '', 'Hyperdown', 'Hyperdown.exe'),
+      path.join(process.env.APPDATA || '', 'Hyperdown', 'Hyperdown.exe'),
+      'D:\\Hyperdown\\Hyperdown.exe',
+      'E:\\Hyperdown\\Hyperdown.exe'
+    ];
+
+    let foundPath = null;
+    for (const p of candidates) {
+      if (p && fs.existsSync(p)) { foundPath = p; break; }
+    }
+    if (!foundPath) return;
+
+    const newTask = {
+      id: 'sign-hyperdown-auto',
+      taskType: 'uia',
+      name: 'Hyperdown 签到',
+      exePath: foundPath,
+      procName: 'Hyperdown',
+      closeAfterSign: false,
+      lastSignDate: null
+    };
+
+    const updated = Array.isArray(tasks) ? [...tasks, newTask] : [newTask];
+    writeData('sign-tasks.json', updated);
+    console.log('[签到] 自动检测到 Hyperdown，已预置 UIA 签到任务:', foundPath);
+  } catch (e) {
+    console.warn('[签到] Hyperdown 自动检测失败:', e.message);
+  }
+}
+
 app.whenReady().then(() => {
   // 注册外部协议给本应用，使 bytedance:// 等不再弹"没有应用"提示
   // 注意：开发模式下 process.execPath 是 electron.exe，若不传 args，协议触发时
@@ -2844,6 +2996,9 @@ app.whenReady().then(() => {
     } catch (e) { console.warn('注册协议失败:', p, e.message); }
   });
   initDataDir();
+
+  // 自动检测 Hyperdown 安装并预置 UIA 签到任务（开箱即用）
+  autoDetectHyperdownSignTask();
 
   // 必应国际版：默认 session 加请求拦截，尽量打开国际版而非中国版(cn.bing.com)
   // 1) 主框架导航到 cn.bing.com 时改写回国际版 URL（对抗中国 IP 的 302 重定向）

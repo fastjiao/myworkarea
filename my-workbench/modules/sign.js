@@ -76,7 +76,9 @@ window.Sign = {
     const head = UI.el('div', 'skill-card-head');
     head.appendChild(UI.el('div', 'skill-name', task.name));
 
-    const typeLabel = UI.el('span', 'sign-type-badge ' + (task.taskType === 'wps' ? 'sign-type-wps' : 'sign-type-web'), task.taskType === 'wps' ? 'WPS' : '网页');
+    const typeBadge = task.taskType === 'wps' ? 'WPS' : (task.taskType === 'uia' ? 'UIA' : '网页');
+    const typeClass = task.taskType === 'wps' ? 'sign-type-wps' : (task.taskType === 'uia' ? 'sign-type-uia' : 'sign-type-web');
+    const typeLabel = UI.el('span', 'sign-type-badge ' + typeClass, typeBadge);
     head.appendChild(typeLabel);
 
     if (this._running[task.id]) {
@@ -88,8 +90,10 @@ window.Sign = {
     }
     card.appendChild(head);
 
-    // 请求方法 + 接口地址（WPS 专用任务不显示 URL）
-    if (task.taskType !== 'wps') {
+    // 请求方法 + 接口地址（WPS/UIA 专用任务不显示 URL）
+    if (task.taskType === 'uia') {
+      card.appendChild(UI.el('div', 'sign-meta', '桌面应用签到（UIA 自动触发，不碰鼠标）'));
+    } else if (task.taskType !== 'wps') {
       const urlLine = UI.el('div', 'sign-url-line');
       const method = (task.method || 'GET').toUpperCase();
       urlLine.appendChild(UI.el('span', 'sign-method-badge sign-method-' + method.toLowerCase(), method));
@@ -147,8 +151,19 @@ window.Sign = {
 
     let verdict;
     try {
-      // WPS 专用签到（RSA+AES 加密多步流程）
-      if (task.taskType === 'wps') {
+      // UI Automation 桌面应用签到（不碰鼠标，程序化 Invoke 按钮）
+      if (task.taskType === 'uia') {
+        const res = await window.workbench.executeUiaSign({
+          exePath: task.exePath || '',
+          procName: task.procName || '',
+          waitMode: task.waitMode || 'auto',
+          closeAfterSign: task.closeAfterSign || false
+        });
+        verdict = {
+          success: res.success,
+          message: res.message || (res.success ? '签到成功' : '签到失败')
+        };
+      } else if (task.taskType === 'wps') {
         const res = await window.workbench.executeWpsSign({ cookie: task.cookie || '' });
         verdict = {
           success: res.ok,
@@ -271,6 +286,7 @@ window.Sign = {
     let ruleSelect, statusInput, fieldInput, valueInput;
     let bodyItem, statusRow, fieldItem;
     let urlItem, advanced;
+    let exePathInput, procNameInput, closeAfterCheckbox, uiaItem;
 
     // ---- 站点模板选择 ----
     const tplItem = UI.el('div', 'form-item');
@@ -280,11 +296,14 @@ window.Sign = {
     optCustom.value = 'custom';
     const optWps = UI.el('option', '', 'WPS 每日签到');
     optWps.value = 'wps';
+    const optUia = UI.el('option', '', '桌面应用（UIA 自动签到，不碰鼠标）');
+    optUia.value = 'uia';
     templateSelect.appendChild(optCustom);
     templateSelect.appendChild(optWps);
-    templateSelect.value = isWps ? 'wps' : 'custom';
+    templateSelect.appendChild(optUia);
+    templateSelect.value = isWps ? 'wps' : (task?.taskType === 'uia' ? 'uia' : 'custom');
     tplItem.appendChild(templateSelect);
-    tplItem.appendChild(UI.el('div', 'sf-api-note', '选「WPS」只需登录即可，选「自定义」需手动填写接口地址等技术参数。'));
+    tplItem.appendChild(UI.el('div', 'sf-api-note', '选「桌面应用」通过 Windows UIA 程序化触发签到按钮，不碰鼠标；选「WPS」只需登录即可；选「自定义」需手动填写接口地址。'));
     form.appendChild(tplItem);
 
     // ---- 任务名称 ----
@@ -305,6 +324,46 @@ window.Sign = {
     urlItem.appendChild(urlInput);
     urlItem.appendChild(UI.el('div', 'sf-api-note', '就是点「签到」时后台请求的那个网址，一般和网站域名相同。'));
     form.appendChild(urlItem);
+
+    // ---- 桌面应用路径（UIA 模式才显示） ----
+    uiaItem = UI.el('div', 'form-item');
+    uiaItem.appendChild(UI.el('label', '', '目标程序路径'));
+    const exeRow = UI.el('div', 'sign-cookie-row');
+    exePathInput = UI.el('input', '');
+    exePathInput.placeholder = 'D:\\DDL\\Hyperdown\\Hyperdown.exe';
+    exePathInput.value = task?.exePath || '';
+    exePathInput.style.flex = '1';
+    const browseBtn = UI.el('button', 'btn btn-ghost', '浏览…');
+    browseBtn.type = 'button';
+    browseBtn.addEventListener('click', async () => {
+      const res = await window.workbench.selectPath('file');
+      if (res && !res.canceled && res.path) exePathInput.value = res.path;
+    });
+    exeRow.appendChild(exePathInput);
+    exeRow.appendChild(browseBtn);
+    uiaItem.appendChild(exeRow);
+    uiaItem.appendChild(UI.el('div', 'sf-api-note', '签到时若程序未运行会自动启动，已运行则直接触发签到按钮。'));
+
+    const procItem = UI.el('div', 'form-item');
+    procItem.appendChild(UI.el('label', '', '进程名（可选，不填自动从路径推导）'));
+    procNameInput = UI.el('input', '');
+    procNameInput.placeholder = 'Hyperdown';
+    procNameInput.value = task?.procName || '';
+    procItem.appendChild(procNameInput);
+    uiaItem.appendChild(procItem);
+
+    const closeItem = UI.el('div', 'form-item');
+    const closeLabel = UI.el('label', '');
+    closeAfterCheckbox = UI.el('input', '');
+    closeAfterCheckbox.type = 'checkbox';
+    closeAfterCheckbox.checked = task?.closeAfterSign || false;
+    closeAfterCheckbox.style.marginRight = '6px';
+    closeLabel.appendChild(closeAfterCheckbox);
+    closeLabel.appendChild(document.createTextNode('签到后自动关闭目标程序'));
+    closeItem.appendChild(closeLabel);
+    uiaItem.appendChild(closeItem);
+
+    form.appendChild(uiaItem);
 
     // ---- 登录状态（一键登录） ----
     const cookieItem = UI.el('div', 'form-item');
@@ -419,10 +478,15 @@ window.Sign = {
 
     // 切换模板：WPS 模式隐藏 URL 和高级设置，自动填充名称
     const applyTemplate = () => {
-      const wps = templateSelect.value === 'wps';
-      urlItem.style.display = wps ? 'none' : '';
-      advanced.style.display = wps ? 'none' : '';
+      const tpl = templateSelect.value;
+      const wps = tpl === 'wps';
+      const uia = tpl === 'uia';
+      urlItem.style.display = (wps || uia) ? 'none' : '';
+      advanced.style.display = (wps || uia) ? 'none' : '';
+      uiaItem.style.display = uia ? '' : 'none';
+      cookieItem.style.display = uia ? 'none' : '';
       if (wps && !nameInput.value.trim()) nameInput.value = 'WPS';
+      if (uia && !nameInput.value.trim()) nameInput.value = 'Hyperdown 签到';
     };
     templateSelect.addEventListener('change', applyTemplate);
     applyTemplate();
@@ -492,15 +556,29 @@ window.Sign = {
       e.preventDefault();
       const name = nameInput.value.trim();
       if (!name) { UI.setToast('请填写任务名称', 'error'); return; }
+
+      const tpl = templateSelect.value;
+      const uia = tpl === 'uia';
       const cookie = cookieInput.value.trim();
-      if (!cookie) { UI.setToast('请先点「一键登录」获取登录状态', 'error'); return; }
+      if (!uia && !cookie) { UI.setToast('请先点「一键登录」获取登录状态', 'error'); return; }
 
       UI.setBtnLoading(saveBtn, true, '保存中…');
       try {
-        const wps = templateSelect.value === 'wps';
+        const wps = tpl === 'wps';
         let data;
 
-        if (wps) {
+        if (uia) {
+          // UIA 桌面应用签到：只需名称 + 程序路径
+          const exePath = exePathInput.value.trim();
+          if (!exePath) { UI.setToast('请填写目标程序路径', 'error'); return; }
+          data = {
+            taskType: 'uia',
+            name,
+            exePath,
+            procName: procNameInput.value.trim(),
+            closeAfterSign: closeAfterCheckbox.checked
+          };
+        } else if (wps) {
           // WPS 专用签到：只需名称 + Cookie
           data = { taskType: 'wps', name, cookie };
         } else {
