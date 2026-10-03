@@ -156,8 +156,14 @@ window.Sign = {
         const res = await window.workbench.executeUiaSign({
           exePath: task.exePath || '',
           procName: task.procName || '',
+          exeArgs: task.exeArgs || [],
+          forceRelaunch: task.forceRelaunch || false,
           waitMode: task.waitMode || 'auto',
-          closeAfterSign: task.closeAfterSign || false
+          closeAfterSign: task.closeAfterSign || false,
+          btnKeywords: task.btnKeywords || '',
+          doneKeywords: task.doneKeywords || '',
+          successKeywords: task.successKeywords || '',
+          navName: task.navName || ''
         });
         verdict = {
           success: res.success,
@@ -287,6 +293,7 @@ window.Sign = {
     let bodyItem, statusRow, fieldItem;
     let urlItem, advanced;
     let exePathInput, procNameInput, closeAfterCheckbox, uiaItem;
+    let btnKwInput, doneKwInput, successKwInput, navNameInput;
 
     // ---- 站点模板选择 ----
     const tplItem = UI.el('div', 'form-item');
@@ -362,6 +369,47 @@ window.Sign = {
     closeLabel.appendChild(document.createTextNode('签到后自动关闭目标程序'));
     closeItem.appendChild(closeLabel);
     uiaItem.appendChild(closeItem);
+
+    // UIA 按钮匹配参数（高级，一般自动检测已预置）
+    const uiaAdv = document.createElement('details');
+    uiaAdv.className = 'sign-advanced';
+    const uiaAdvSummary = document.createElement('summary');
+    uiaAdvSummary.textContent = '按钮匹配设置（高级，一般不用改）';
+    uiaAdv.appendChild(uiaAdvSummary);
+
+    const btnKwItem = UI.el('div', 'form-item');
+    btnKwItem.appendChild(UI.el('label', '', '按钮关键词（管道分隔，默认 签到|打卡）'));
+    btnKwInput = UI.el('input', '');
+    btnKwInput.placeholder = '签到|打卡';
+    btnKwInput.value = task?.btnKeywords || '';
+    btnKwItem.appendChild(btnKwInput);
+    uiaAdv.appendChild(btnKwItem);
+
+    const doneKwItem = UI.el('div', 'form-item');
+    doneKwItem.appendChild(UI.el('label', '', '已完成关键词（管道分隔，默认 已签）'));
+    doneKwInput = UI.el('input', '');
+    doneKwInput.placeholder = '已签';
+    doneKwInput.value = task?.doneKeywords || '';
+    doneKwItem.appendChild(doneKwInput);
+    uiaAdv.appendChild(doneKwItem);
+
+    const successKwItem = UI.el('div', 'form-item');
+    successKwItem.appendChild(UI.el('label', '', '成功关键词（管道分隔）'));
+    successKwInput = UI.el('input', '');
+    successKwInput.placeholder = '签到成功|今日已签|已签到|领取成功|已领取';
+    successKwInput.value = task?.successKeywords || '';
+    successKwItem.appendChild(successKwInput);
+    uiaAdv.appendChild(successKwItem);
+
+    const navNameItem = UI.el('div', 'form-item');
+    navNameItem.appendChild(UI.el('label', '', '导航按钮名（空表示不需要导航）'));
+    navNameInput = UI.el('input', '');
+    navNameInput.placeholder = '首页';
+    navNameInput.value = task?.navName ?? '首页';
+    navNameItem.appendChild(navNameInput);
+    uiaAdv.appendChild(navNameItem);
+
+    uiaItem.appendChild(uiaAdv);
 
     form.appendChild(uiaItem);
 
@@ -576,7 +624,13 @@ window.Sign = {
             name,
             exePath,
             procName: procNameInput.value.trim(),
-            closeAfterSign: closeAfterCheckbox.checked
+            exeArgs: task?.exeArgs || [],
+            forceRelaunch: task?.forceRelaunch || false,
+            closeAfterSign: closeAfterCheckbox.checked,
+            btnKeywords: btnKwInput.value.trim(),
+            doneKeywords: doneKwInput.value.trim(),
+            successKeywords: successKwInput.value.trim(),
+            navName: navNameInput.value.trim()
           };
         } else if (wps) {
           // WPS 专用签到：只需名称 + Cookie
