@@ -351,6 +351,9 @@ function switchPage(pageName) {
   // 网易云播放底栏只在「音乐」(netease) 页面显示，其他页面隐藏
   const neteaseBar = document.getElementById('netease-player-bar');
   if (neteaseBar) neteaseBar.style.display = (pageName === 'netease') ? '' : 'none';
+  // 网易云顶栏组件只在「音乐」页面显示（嵌入标题栏内部，不增加高度）
+  const neteaseTitlebarContent = document.getElementById('netease-titlebar-content');
+  if (neteaseTitlebarContent) neteaseTitlebarContent.hidden = (pageName !== 'netease');
   document.body.classList.toggle('netease-bar-active', pageName === 'netease' && neteaseBar && neteaseBar.classList.contains('show'));
   // 歌词面板只在「音乐」页面显示，切换其他页面时自动关闭
   if (pageName !== 'netease' && window.Netease && window.Netease._lyricVisible) {

@@ -155,8 +155,8 @@ body.maximized .titlebar {
   padding-right: 0;
 }
 
-/* 自定义标题栏：透明叠加在内容之上，与主内容区融为一体（EchoMusic 风格）
-   不占独立视觉空间，仅承载拖拽区 + 右侧窗口按钮 */
+/* 自定义标题栏：毛玻璃叠加在内容之上，与主内容区融为一体（EchoMusic 风格）
+   半透明 + backdrop-blur：内容滚动到标题栏下方时被模糊，不遮挡顶部按钮 */
 .titlebar {
   position: absolute;
   top: 0;
@@ -164,7 +164,9 @@ body.maximized .titlebar {
   right: 0;
   height: 36px;
   padding: 0 8px 0 14px;
-  background: transparent; /* 透明，让侧边栏/主内容区背景延伸到顶部 */
+  background: var(--titlebar-bg); /* 半透明毛玻璃，内容滚到下方时模糊不穿透 */
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
   -webkit-app-region: no-drag; /* 手动拖拽+双击检测（drag 区会吞 mousedown 事件，无法检测手势） */
   user-select: none; /* 禁止双击选中标题栏文字 */
   z-index: 20;
@@ -177,6 +179,37 @@ body.maximized .titlebar {
 /* 标题文字隐藏（EchoMusic 风格：标题栏不显示标题，品牌在侧边栏） */
 .titlebar-title {
   display: none;
+}
+
+/* 网易云顶栏容器：嵌入标题栏内部，占据按钮左侧全部空间，不增加标题栏高度 */
+.netease-titlebar-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+.netease-titlebar-content[hidden] {
+  display: none;
+}
+/* 嵌入标题栏时 topbar 紧凑化：去掉额外 padding/margin，适配 36px 高度 */
+.netease-titlebar-content .netease-topbar {
+  width: 100%;
+  padding: 0;
+  margin: 0;
+}
+.netease-titlebar-content .netease-mini-avatar-wrap {
+  width: 24px;
+  height: 24px;
+}
+.netease-titlebar-content .netease-mini-name {
+  font-size: 12px;
+  max-width: 100px;
+}
+.netease-titlebar-content .netease-topbar .netease-search-bar {
+  max-width: 260px;
+}
+.netease-titlebar-content .netease-topbar-menu {
+  padding: 4px 10px;
 }
 
 .titlebar-buttons {

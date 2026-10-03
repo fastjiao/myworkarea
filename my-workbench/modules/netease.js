@@ -121,8 +121,14 @@ window.Netease = {
     const page = document.getElementById('page-netease');
     page.innerHTML = '';
 
+    // topbar 渲染到标题栏内嵌容器（锁在标题栏内，不随滚动移动，不增加高度）
+    const titlebarContent = document.getElementById('netease-titlebar-content');
+    if (titlebarContent) {
+      titlebarContent.innerHTML = '';
+      titlebarContent.appendChild(this._renderTopbar());
+    }
+
     const section = UI.el('div', 'section');
-    section.appendChild(this._renderTopbar());
     section.appendChild(this._renderView());
     page.appendChild(section);
 
