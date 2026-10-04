@@ -76,8 +76,8 @@ window.Sign = {
     const head = UI.el('div', 'skill-card-head');
     head.appendChild(UI.el('div', 'skill-name', task.name));
 
-    const typeBadge = task.taskType === 'wps' ? 'WPS' : (task.taskType === 'uia' ? 'UIA' : '网页');
-    const typeClass = task.taskType === 'wps' ? 'sign-type-wps' : (task.taskType === 'uia' ? 'sign-type-uia' : 'sign-type-web');
+    const typeBadge = task.taskType === 'wps' ? 'WPS' : (task.taskType === 'uia' ? 'UIA' : (task.taskType === 'workbuddy' ? 'API' : '网页'));
+    const typeClass = task.taskType === 'wps' ? 'sign-type-wps' : (task.taskType === 'uia' ? 'sign-type-uia' : (task.taskType === 'workbuddy' ? 'sign-type-wps' : 'sign-type-web'));
     const typeLabel = UI.el('span', 'sign-type-badge ' + typeClass, typeBadge);
     head.appendChild(typeLabel);
 
@@ -93,6 +93,8 @@ window.Sign = {
     // 请求方法 + 接口地址（WPS/UIA 专用任务不显示 URL）
     if (task.taskType === 'uia') {
       card.appendChild(UI.el('div', 'sign-meta', '桌面应用签到（UIA 自动触发，不碰鼠标）'));
+    } else if (task.taskType === 'workbuddy') {
+      card.appendChild(UI.el('div', 'sign-meta', 'API 签到（从进程内存提取 token，自动领取积分）'));
     } else if (task.taskType !== 'wps') {
       const urlLine = UI.el('div', 'sign-url-line');
       const method = (task.method || 'GET').toUpperCase();
@@ -171,6 +173,12 @@ window.Sign = {
         };
       } else if (task.taskType === 'wps') {
         const res = await window.workbench.executeWpsSign({ cookie: task.cookie || '' });
+        verdict = {
+          success: res.ok,
+          message: res.message || (res.ok ? '签到成功' : '签到失败')
+        };
+      } else if (task.taskType === 'workbuddy') {
+        const res = await window.workbench.executeWorkbuddySign({ procName: task.procName || 'WorkBuddy' });
         verdict = {
           success: res.ok,
           message: res.message || (res.ok ? '签到成功' : '签到失败')

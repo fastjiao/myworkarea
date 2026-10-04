@@ -1716,6 +1716,64 @@ ipcMain.handle('sign:execute-http', async (event, params) => {
 });
 
 /**
+ * WorkBuddy 签到：从进程内存提取 accessToken → 调用签到 API
+ * 需要先安装 data/tools/MemoryScan.exe（C# 编译的内存扫描工具）
+ */
+ipcMain.handle('sign:workbuddy-sign', async (event, params) => {
+  try {
+    const { execFile } = require('child_process');
+    const scannerPath = path.join(__dirname, 'data', 'tools', 'MemoryScan.exe');
+    const procName = (params && params.procName) || 'WorkBuddy';
+
+    const token = await new Promise((resolve) => {
+      execFile(scannerPath, [procName], {
+        windowsHide: true,
+        timeout: 120000,
+        maxBuffer: 10 * 1024 * 1024
+      }, (err, stdout, stderr) => {
+        if (err) { resolve(null); return; }
+        const t = String(stdout).trim();
+        resolve(t.startsWith('eyJ') ? t : null);
+      });
+    });
+
+    if (!token) return { ok: false, error: '未能从 WorkBuddy 进程内存提取 accessToken，请确认 WorkBuddy 正在运行' };
+
+    const apiUrl = 'https://www.workbuddy.cn/v2/billing/meter/daily-checkin';
+    const statusUrl = 'https://www.workbuddy.cn/v2/billing/meter/checkin-activity-status';
+    const headers = {
+      'content-type': 'application/json',
+      'authorization': 'Bearer ' + token,
+      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    };
+
+    const statusRes = await signHttpRequest({ url: statusUrl, method: 'POST', headers, body: '{}' });
+    if (statusRes.error) return { ok: false, error: '查询签到状态失败：' + statusRes.error };
+    try {
+      const statusData = JSON.parse(statusRes.body);
+      if (statusData.code === 0 && statusData.data && statusData.data.today_checked_in) {
+        return { ok: true, alreadyCheckedIn: true, message: '今日已领取（连续' + statusData.data.streak_days + '天）' };
+      }
+    } catch (e) {}
+
+    const checkinRes = await signHttpRequest({ url: apiUrl, method: 'POST', headers, body: '{}' });
+    if (checkinRes.error) return { ok: false, error: '签到请求失败：' + checkinRes.error };
+
+    try {
+      const data = JSON.parse(checkinRes.body);
+      if (data.code === 0 && data.data) {
+        return { ok: true, message: '领取成功，获得 ' + data.data.credit + ' 积分（连续' + data.data.streak_days + '天）' };
+      }
+      return { ok: false, error: '签到失败：' + (data.msg || checkinRes.body) };
+    } catch (e) {
+      return { ok: false, error: '响应解析失败：' + checkinRes.body };
+    }
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+/**
  * 打开签到登录窗口：加载接口同域首页，用户登录后 cookie 持久化到 sign session
  * @param {{ url: string }} params 签到接口 URL（取其域名定位登录页）
  */
@@ -2012,18 +2070,24 @@ function runPowerShell(psScript, timeoutMs = 30000) {
 
 /**
  * 启动外部 .exe 程序
+ * 用 exec('start ...') 而非 spawn：start 创建独立进程组，对 Electron 托盘应用兼容性更好
+ * （部分 Electron 应用用 spawn 启动会立即退出，但 start 方式正常）
  * @returns {{success: boolean, pid?: number, message?: string}}
  */
 function launchExe(exePath, args = []) {
   return new Promise((resolve) => {
     try {
-      const child = require('child_process').spawn(exePath, args, {
-        detached: true,          // 脱离父进程，主进程退出不影响
-        stdio: 'ignore',
-        windowsHide: false       // 显示程序窗口
+      let cmd = 'start "" "' + exePath + '"';
+      if (args && args.length > 0) {
+        cmd += ' ' + args.map(a => '"' + a + '"').join(' ');
+      }
+      require('child_process').exec(cmd, { windowsHide: true }, (err) => {
+        if (err) {
+          resolve({ success: false, message: err.message });
+        } else {
+          resolve({ success: true });
+        }
       });
-      child.unref();             // 不等待子进程退出
-      resolve({ success: true, pid: child.pid });
     } catch (err) {
       resolve({ success: false, message: err.message });
     }
@@ -2402,11 +2466,13 @@ ipcMain.handle('sign:execute-uia', async (event, {
   const uiaResult = await new Promise((resolve) => {
     try {
       const { execFile } = require('child_process');
-      const uiaArgs = [targetProc];
-      if (btnKeywords) uiaArgs.push(btnKeywords);
-      if (doneKeywords) uiaArgs.push(doneKeywords);
-      if (successKeywords) uiaArgs.push(successKeywords);
-      uiaArgs.push(navName || '');
+      const uiaArgs = [
+        targetProc,
+        btnKeywords || '签到|打卡',
+        doneKeywords || '已签',
+        successKeywords || '签到成功|今日已签|已签到|领取成功|已领取',
+        navName || ''
+      ];
       const child = execFile(helperPath, uiaArgs, {
         timeout: 60000,
         windowsHide: true,
@@ -2802,7 +2868,7 @@ function autoDetectHyperdownSignTask() {
 function autoDetectWorkBuddySignTask() {
   try {
     const tasks = readData('sign-tasks.json');
-    if (Array.isArray(tasks) && tasks.some(t => t.taskType === 'uia' && t.name && t.name.indexOf('WorkBuddy') >= 0)) {
+    if (Array.isArray(tasks) && tasks.some(t => t.taskType === 'uia' && t.name && t.name.toLowerCase().indexOf('workbuddy') >= 0)) {
       return;
     }
 
@@ -2825,8 +2891,6 @@ function autoDetectWorkBuddySignTask() {
       name: 'WorkBuddy 领取积分',
       exePath: foundPath,
       procName: 'WorkBuddy',
-      exeArgs: ['--force-renderer-accessibility'],
-      forceRelaunch: true,
       closeAfterSign: false,
       btnKeywords: '立即领取',
       doneKeywords: '已领取',

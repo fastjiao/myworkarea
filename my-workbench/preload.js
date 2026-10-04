@@ -162,6 +162,13 @@ contextBridge.exposeInMainWorld('workbench', {
   executeHttpSign: (params) => ipcRenderer.invoke('sign:execute-http', params),
 
   /**
+   * WorkBuddy 签到：从进程内存提取 token → 调用签到 API
+   * @param {{ procName?: string }} params
+   * @returns {Promise<{ok: boolean, message?: string, error?: string, alreadyCheckedIn?: boolean}>}
+   */
+  executeWorkbuddySign: (params) => ipcRenderer.invoke('sign:workbuddy-sign', params),
+
+  /**
    * 打开网页登录窗口（登录后 cookie 持久化，供一键抓取）
    * @param {{ url: string }} params 签到接口 URL
    * @returns {Promise<{success: boolean, loginUrl?: string, message?: string}>}
