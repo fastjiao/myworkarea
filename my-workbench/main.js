@@ -1,15 +1,3 @@
-// =====================================================================
-// main.js —— Electron 主进程入口
-// 职责：
-//   1. 创建并管理应用主窗口（BrowserWindow）
-//   2. 处理渲染进程发来的 IPC 请求
-//   3. 通过 child_process.exec 启动本地软件
-//   4. 通过 shell.openPath 打开本地文件 / 文件夹
-//   5. 通过 dialog.showOpenDialog 弹出系统文件选择对话框
-//   6. 读写 data/ 目录下的 JSON 数据文件，实现持久化
-// 说明：主进程只负责「系统层面」的操作，不参与任何界面渲染逻辑
-// =====================================================================
-
 const { app, BrowserWindow, ipcMain, dialog, shell, session, screen, Menu, net, Tray, nativeImage } = require('electron');
 const { exec, fork } = require('child_process');
 const path = require('path');
@@ -18,9 +6,7 @@ const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
 
-// ---------------------------------------------------------------------
 // 常量定义
-// ---------------------------------------------------------------------
 
 // 用户数据存放目录：
 //  - 开发模式：项目目录下 data/
@@ -60,9 +46,7 @@ const DEFAULT_VALUES = {
   'netease-data.json': {}
 };
 
-// ---------------------------------------------------------------------
 // 签到窗口管理（持久化 Cookie 实现免登录）
-// ---------------------------------------------------------------------
 
 /**
  * 签到专用 BrowserWindow 实例集合
@@ -198,9 +182,7 @@ function getOrCreateSignWindow(taskId, url) {
   return win;
 }
 
-// ---------------------------------------------------------------------
 // 工具函数
-// ---------------------------------------------------------------------
 
 /**
  * 确保 data/ 目录存在（应用首次运行时自动创建，不存在则递归创建）
@@ -285,9 +267,7 @@ function writeData(filename, data) {
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
 }
 
-// ---------------------------------------------------------------------
 // 窗口创建
-// ---------------------------------------------------------------------
 
 // 主窗口引用（托盘恢复窗口使用）
 let mainWindow = null;
@@ -419,9 +399,7 @@ function createWindow() {
   win.loadFile('index.html');
 }
 
-// ---------------------------------------------------------------------
 // 窗口控制 IPC（最小/最大/关闭/查询最大化状态）
-// ---------------------------------------------------------------------
 // 现使用系统原生最大化（titleBarStyle:'hidden' + titleBarOverlay），win.isMaximized/
 // win.maximize/unmaximize 状态机可靠，不再需要手动 setBounds 管理。
 ipcMain.handle('window:minimize', () => { if (mainWindow) mainWindow.minimize(); });
@@ -437,21 +415,11 @@ ipcMain.handle('window:maximize-toggle', () => {
 ipcMain.handle('window:close', () => { if (mainWindow) mainWindow.close(); });
 ipcMain.handle('window:is-maximized', () => mainWindow ? mainWindow.isMaximized() : false);
 
-// ---------------------------------------------------------------------
 // 抖音 / 千问 窗口与后台自动化
-// ---------------------------------------------------------------------
 
 // 抖音主窗口、千问窗口引用
 let douyinWindow = null;
 let qwenWindow = null;
-
-/**
- * 拦截非标准协议链接（如 bytedance://），阻止系统弹出"找不到应用"对话框
- * 抖音登录/滑动时会尝试唤起 PC 客户端（bytedance:// 协议），未装客户端时系统弹窗打扰用户
- * 主进程的 will-navigate 等事件对外部协议可能不触发（外部协议不走导航流程，直接交给系统），
- * 因此在渲染层注入 JS 直接拦截 <a> 点击 / window.open / location 赋值，在 Chromium 处理前阻止
- * @param {BrowserWindow} win
- */
 
 // 记录需要拦截外部协议唤起的 webContents ID，供 session permission handler 精确匹配
 const blockedWcIds = new Set();
@@ -583,9 +551,7 @@ function createQwenWindow() {
   qwenWindow.on('closed', () => { qwenWindow = null; });
 }
 
-// ---------------------------------------------------------------------
 // 抖音 / 千问 IPC 通信
-// ---------------------------------------------------------------------
 
 // 打开抖音独立全屏窗口
 ipcMain.handle('open-douyin', () => {
@@ -599,9 +565,7 @@ ipcMain.handle('open-qwen', () => {
   return { success: true };
 });
 
-// ---------------------------------------------------------------------
 // IPC 通信处理
-// ---------------------------------------------------------------------
 
 /**
  * 启动本地软件
@@ -1323,11 +1287,9 @@ ipcMain.handle('data:write', async (event, filename, data) => {
   }
 });
 
-// ---------------------------------------------------------------------
 // 设置 —— 开机自启动
 // 说明：通过系统注册表（Windows 的 Run 键 / macOS 的 LoginItem）实现，
 //       状态由操作系统保存，无需写入 data/settings.json
-// ---------------------------------------------------------------------
 
 /**
  * 读取开机自启动状态
@@ -1380,9 +1342,7 @@ ipcMain.handle('settings:set-background', async (event, enabled) => {
   }
 });
 
-// ---------------------------------------------------------------------
 // 一键签到 IPC
-// ---------------------------------------------------------------------
 
 /**
  * 显示/隐藏签到专用 BrowserWindow（供用户手动登录一次，cookie 持久化）
@@ -1604,10 +1564,8 @@ ipcMain.handle('sign:load-tasks', async () => {
   return readData('sign-tasks.json');
 });
 
-// ---------------------------------------------------------------------
 // 网页签到（HTTP 接口请求：Cookie + 直接请求签到接口）
 // 用 Node 原生 http/https，不依赖浏览器，规避渲染进程跨域限制。
-// ---------------------------------------------------------------------
 
 /**
  * 通用 HTTP 请求（GET / POST，返回结构化结果）
@@ -1711,12 +1669,10 @@ async function _wbExtractToken(procName) {
   });
 }
 
-// ---------------------------------------------------------------------
 // WorkBuddy token 缓存层（P0-1）
 // 避免每次签到都全量扫描进程内存（MemoryScan.exe timeout 120s）
 // 内存缓存 + 磁盘持久化 data/wb-token.json，按 JWT exp 自动过期
 // 仅在缓存未命中 / 过期 / 401 失效时才回退到 _wbExtractToken
-// ---------------------------------------------------------------------
 const WB_TOKEN_CACHE_FILE = path.join(DATA_DIR, 'wb-token.json');
 let _wbTokenCache = null; // { token, exp, procName, ts }
 
@@ -1902,13 +1858,11 @@ ipcMain.handle('sign:workbuddy-status', async (event, params) => {
   }
 });
 
-// ---------------------------------------------------------------------
 // Hyperdown CDP 后台签到
 // Hyperdown 是 Wails/WebView2 应用，POST /me/checkins 有 secure_request_required
 // 反爬，纯 HTTP 复刻需逆向 exe 算法。改为开启 WebView2 远程调试端口，通过 CDP
 // 注入 JS 点击签到按钮，让客户端自己生成安全校验发请求——绕过反爬，且窗口无需
 // 在前台（和 WorkBuddy 一样后台完成）。
-// ---------------------------------------------------------------------
 const HD_CDP_PORT = 9223;
 
 /**
@@ -2138,11 +2092,9 @@ ipcMain.handle('sign:fetch-cookie', async (event, { url }) => {
   }
 });
 
-// =====================================================================
 // WPS 专用签到（RSA + AES 加密多步流程）
 // 原理：① GET 获取 RSA 公钥 → ② AES 加密用户数据 → ③ RSA 加密 AES 密钥
 //       → ④ POST 签到接口（带加密 token 头 + 加密请求体）
-// =====================================================================
 
 /**
  * 生成随机 AES 密钥（22 位随机小写字母+数字 + 10 位时间戳 = 32 位）
@@ -2311,9 +2263,7 @@ ipcMain.handle('sign:fetch-cookie-wps', async () => {
   }
 });
 
-// ---------------------------------------------------------------------
 // 桌面程序签到（PowerShell 自动化）
-// ---------------------------------------------------------------------
 
 /**
  * 执行 PowerShell 脚本并返回输出
@@ -2707,11 +2657,9 @@ ipcMain.handle('sign:execute-desktop', async (event, {
   return { success, message, results };
 });
 
-// ---------------------------------------------------------------------
 // UI Automation 签到（不碰鼠标，通过 Windows UIA 程序化触发按钮 Invoke）
 // 适用：Wails/WebView2、Electron 等 UIA 可访问的桌面应用
 // 优势：无需 PowerShell、不移动鼠标、不抢焦点、客户端自己生成安全校验
-// ---------------------------------------------------------------------
 
 ipcMain.handle('sign:execute-uia', async (event, {
   exePath,
@@ -2847,9 +2795,7 @@ ipcMain.handle('sign:execute-uia', async (event, {
   return { success, message: parts.join('，'), results };
 });
 
-// ---------------------------------------------------------------------
 // 坐标拾取器（全屏透明置顶窗口，鼠标点哪就抓哪个屏幕坐标）
-// ---------------------------------------------------------------------
 
 let pickerWindow = null;
 
@@ -3048,9 +2994,7 @@ ipcMain.handle('sign:ps-templates', async () => {
   ];
 });
 
-// ---------------------------------------------------------------------
 // 应用生命周期
-// ---------------------------------------------------------------------
 
 // 当 Electron 初始化完成后创建窗口，并确保数据目录存在
 /**
@@ -3112,7 +3056,7 @@ function buildChineseMenu() {
               type: 'info',
               title: '关于',
               message: '教公台-阡稻工作室',
-              detail: '个人工作台桌面应用 v2.0.0'
+              detail: '教公台桌面应用'
             });
           }
         }
@@ -3122,12 +3066,10 @@ function buildChineseMenu() {
   return Menu.buildFromTemplate(template);
 }
 
-// ---------------------------------------------------------------------
 // 单实例锁 + 外部协议拦截（bytedance:// 等）
 // 抖音网页触发 bytedance:// 唤起 PC 客户端时，Windows 没有直接拦截外部协议的事件，
 // 官方推荐方式：把协议注册给本应用，触发时由 second-instance 接收并静默忽略，
 // Chromium 见有处理程序就不再弹"没有应用可打开此链接"提示
-// ---------------------------------------------------------------------
 
 // 需要静默拦截的外部协议列表
 const BLOCKED_PROTOCOLS = ['bytedance', 'snssdk', 'aweme'];
@@ -3265,8 +3207,11 @@ app.whenReady().then(() => {
   initDataDir();
 
   // 自动检测 Hyperdown / WorkBuddy 安装并预置 UIA 签到任务（开箱即用）
-  autoDetectHyperdownSignTask();
-  autoDetectWorkBuddySignTask();
+  // 延后到主窗口创建后再执行，避免磁盘扫描阻塞窗口首次显示
+  setImmediate(() => {
+    autoDetectHyperdownSignTask();
+    autoDetectWorkBuddySignTask();
+  });
 
   // 必应国际版：默认 session 加请求拦截，尽量打开国际版而非中国版(cn.bing.com)
   // 1) 主框架导航到 cn.bing.com 时改写回国际版 URL（对抗中国 IP 的 302 重定向）

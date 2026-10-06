@@ -1,20 +1,3 @@
-// =====================================================================
-// renderer.js —— 渲染进程主控制器
-// 职责：
-//   1. 定义全局 Store（共享数据 + 数据读写 + 变更通知）
-//   2. 定义全局 UI 工具（Toast、模态框、右键菜单、DOM / SVG 图标辅助）
-//   3. 定义日期工具 DateUtil
-//   4. 处理侧边栏导航切换与主题切换
-//   5. 应用启动时加载数据并初始化各功能模块
-// 说明：
-//   本文件最后加载（位于各 modules/*.js 之后），负责把它们串联起来；
-//   各模块通过 window.Store / window.UI / window.DateUtil 访问共享能力。
-// =====================================================================
-
-// ---------------------------------------------------------------------
-// 内置默认软件列表（已按要求清除，如需恢复取消下方注释即可）
-// 这些是 Windows 系统自带程序，path 直接用命令名即可
-// ---------------------------------------------------------------------
 const DEFAULT_APPS = [
   // { id: 'builtin-notepad', type: 'app', name: '记事本', icon: '', path: 'notepad.exe', isBuiltin: true },
   // { id: 'builtin-calc',    type: 'app', name: '计算器', icon: '', path: 'calc.exe',    isBuiltin: true },
@@ -22,9 +5,7 @@ const DEFAULT_APPS = [
   // { id: 'builtin-cmd',     type: 'app', name: '命令提示符', icon: '', path: 'cmd.exe', isBuiltin: true }
 ];
 
-// ---------------------------------------------------------------------
 // 日期工具：统一使用本地时区的 YYYY-MM-DD 字符串，方便比较与排序
-// ---------------------------------------------------------------------
 const DateUtil = {
   /**
    * 把 Date 对象格式化为 YYYY-MM-DD（补齐两位）
@@ -48,11 +29,9 @@ const DateUtil = {
   isOverdue: (str) => !!str && str < DateUtil.today()
 };
 
-// ---------------------------------------------------------------------
 // Store —— 共享数据仓库
 // 职责：持有全部用户数据，负责与主进程交互完成加载与保存，
 //       并在数据变更后通知所有注册的模块刷新界面。
-// ---------------------------------------------------------------------
 const Store = {
   // 用户自定义快捷方式（type 可为 'app' | 'file' | 'folder'）
   apps: [],
@@ -76,9 +55,14 @@ const Store = {
 
   /** 启动时一次性加载所有数据 */
   async load() {
-    this.apps = (await window.workbench.readData('apps.json')) || [];
-    this.events = (await window.workbench.readData('events.json')) || [];
-    this.settings = (await window.workbench.readData('settings.json')) || { theme: 'system' };
+    const [apps, events, settings] = await Promise.all([
+      window.workbench.readData('apps.json'),
+      window.workbench.readData('events.json'),
+      window.workbench.readData('settings.json')
+    ]);
+    this.apps = apps || [];
+    this.events = events || [];
+    this.settings = settings || { theme: 'system' };
   },
 
   /** 保存快捷方式数据 */
@@ -133,9 +117,7 @@ const Store = {
   }
 };
 
-// ---------------------------------------------------------------------
 // UI —— 界面工具（Toast、模态框、右键菜单、DOM / SVG 图标辅助）
-// ---------------------------------------------------------------------
 const UI = {
   // Toast 自动关闭计时器
   _toastTimer: null,
@@ -292,9 +274,7 @@ const UI = {
   }
 };
 
-// ---------------------------------------------------------------------
 // 主题切换
-// ---------------------------------------------------------------------
 
 // 系统主题检测：matchMedia 反映 OS 明暗偏好
 const _sysDarkMq = window.matchMedia('(prefers-color-scheme: dark)');
@@ -327,9 +307,7 @@ _sysDarkMq.addEventListener('change', () => {
   }
 });
 
-// ---------------------------------------------------------------------
 // 侧边栏导航切换
-// ---------------------------------------------------------------------
 
 // 页面名 → 对应模块对象
 const PAGE_MODULES = {};
@@ -385,12 +363,10 @@ function webviewPreloadUrl() {
   return 'file://' + encodeURI(dir) + '/block-external-protocol-preload.js';
 }
 
-// ---------------------------------------------------------------------
 // 科技感背景：微光粒子 + 动态数据流（canvas）
 // 说明：在 #fx-canvas 上绘制向上漂浮、水平漂移的蓝色粒子，模拟
 //       「动态数据流 / 全息投影」氛围；粒子颜色在界面蓝 #5F86FF 与
 //       科技浅蓝 #A9C2FF 之间过渡，并带呼吸闪烁效果。
-// ---------------------------------------------------------------------
 function initParticles() {
   const canvas = document.getElementById('fx-canvas');
   if (!canvas) return;
@@ -516,9 +492,7 @@ function initParticles() {
   }
 }
 
-// ---------------------------------------------------------------------
 // 初始化
-// ---------------------------------------------------------------------
 
 /**
  * 初始化应用：
@@ -529,12 +503,10 @@ function initParticles() {
  *   5. 初始化各功能模块
  *   6. 默认进入首页
  */
-// ---------------------------------------------------------------------
 // 标题栏窗口控制：系统原生按钮 + 最大化状态同步
 // titleBarStyle:'hidden' + titleBarOverlay 后，最小/最大/关闭按钮由系统绘制，
 // 拖拽/Aero Snap/双击最大化/Win+方向键全部由系统接管，渲染进程无需手动实现。
 // 此处仅同步最大化状态以切换 body.maximized（调整 padding/圆角）。
-// ---------------------------------------------------------------------
 function initWindowControls() {
   // 同步初始最大化状态（启动时可能已是最大化）
   window.workbench.windowIsMaximized().then((isMax) => {

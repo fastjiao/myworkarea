@@ -1,4 +1,3 @@
-// =====================================================================
 // modules/settings.js —— 设置弹窗模块
 // 职责：
 //   1. 侧边栏底部齿轮按钮 → 打开悬浮设置弹窗（复用通用 modal）
@@ -9,7 +8,6 @@
 //   - 后台运行状态由主进程持有并持久化到 data/bg-run.json
 //   - 🔴 后续新增设置项：在 openSettings() 内按 settings-row 结构追加即可
 //   - 组件挂在 window.SettingsWidget，由 renderer.js 在 init() 中统一调用
-// =====================================================================
 
 // 把 KeyboardEvent.code 转为友好显示名
 function _keyLabel(code) {
@@ -25,7 +23,6 @@ function _keyLabel(code) {
 }
 
 window.SettingsWidget = {
-  // -------------------------------------------------------------------
   init() {
     const btn = document.getElementById('settings-btn');
     if (!btn) return;
@@ -40,9 +37,7 @@ window.SettingsWidget = {
     }
   },
 
-  // -------------------------------------------------------------------
   // 打开设置弹窗（左侧导航 + 右侧面板）
-  // -------------------------------------------------------------------
   async openSettings() {
     const layout = UI.el('div', 'settings-layout');
     const nav = UI.el('div', 'settings-nav');
@@ -74,9 +69,7 @@ window.SettingsWidget = {
     UI.openModal('设置', layout, 'settings-modal');
   },
 
-  // -------------------------------------------------------------------
   // 通用分区：明暗模式（跟随系统/亮色/暗色）+ 开机自启动 + 关闭后后台运行
-  // -------------------------------------------------------------------
   _buildGeneralSection(panel) {
     // ---- 明暗模式三选 ----
     const themeField = UI.el('div', 'settings-field');
@@ -172,9 +165,7 @@ window.SettingsWidget = {
     });
   },
 
-  // -------------------------------------------------------------------
   // 网易云音乐分区：打卡目标数量（持久化到 netease-data.json）
-  // -------------------------------------------------------------------
   _buildNeteaseSection(panel) {
     if (!window.Netease) {
       panel.appendChild(UI.el('div', 'empty-tip', '网易云音乐模块未加载'));

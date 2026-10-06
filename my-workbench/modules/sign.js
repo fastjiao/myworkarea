@@ -1,16 +1,13 @@
-// =====================================================================
 // modules/sign.js —— 一键签到模块（HTTP 接口签到）
 // 原理：一键登录抓取 Cookie → 由主进程代理向签到接口发 HTTP 请求，
 //       按「HTTP 状态码」或「响应 JSON 字段」判定签到结果。
 //       面向普通用户：登录即可用，技术参数收进「高级设置」折叠区。
-// =====================================================================
 
 window.Sign = {
   _tasks: [],
   _running: {},
   _results: {},
 
-  // -------------------------------------------------------------------
   async init() {
     try {
       const saved = await window.workbench.loadSignTasks();
@@ -23,12 +20,10 @@ window.Sign = {
     this.render();
   },
 
-  // -------------------------------------------------------------------
   async _persist() {
     await window.workbench.saveSignTasks(this._tasks);
   },
 
-  // -------------------------------------------------------------------
   render() {
     const page = document.getElementById('page-sign');
     page.innerHTML = '';
@@ -69,7 +64,6 @@ window.Sign = {
     page.appendChild(section);
   },
 
-  // -------------------------------------------------------------------
   _buildTaskCard(task) {
     const card = UI.el('div', 'skill-card sign-card');
 
@@ -146,7 +140,6 @@ window.Sign = {
     return card;
   },
 
-  // -------------------------------------------------------------------
   async _doSign(task) {
     if (this._running[task.id]) return;
     // 今日已签到（lastSignDate 持久化于 data/sign-tasks.json）：不重复请求
@@ -296,7 +289,6 @@ window.Sign = {
     }
   },
 
-  // -------------------------------------------------------------------
   async _signAll() {
     // 跳过今日已签的任务（lastSignDate 持久化记录）
     const today = DateUtil.today();
@@ -312,7 +304,6 @@ window.Sign = {
     UI.setToast('全部签到任务执行完毕', 'success');
   },
 
-  // -------------------------------------------------------------------
   async _calibrateWorkbuddy(task) {
     if (this._running[task.id]) return;
     UI.setToast(`正在校准「${task.name}」状态...`, 'info');
@@ -337,7 +328,6 @@ window.Sign = {
     }
   },
 
-  // -------------------------------------------------------------------
   async _removeTask(task) {
     if (!confirm(`确定删除签到任务「${task.name}」吗？`)) return;
     this._tasks = this._tasks.filter(t => t.id !== task.id);
@@ -345,7 +335,6 @@ window.Sign = {
     this.render();
   },
 
-  // -------------------------------------------------------------------
   _openAddModal() { this._openFormModal(null); },
   _openEditModal(task) { this._openFormModal(task); },
 

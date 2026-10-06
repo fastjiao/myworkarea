@@ -1,4 +1,3 @@
-// =====================================================================
 // modules/netease.js —— 网易云音乐控制面板模块
 // 职责：
 //   1. 进入页面时自动拉起本地 NeteaseCloudMusicApi 服务（主进程 fork 子进程）
@@ -7,7 +6,6 @@
 //                + 内容区（我喜欢列表）；未登录态显示居中扫码卡片
 //   4. 全局底部播放条：登录后常驻应用底部（任意页面可见），含歌名/进度/控制
 //   5. 通过主进程 IPC 代理访问 localhost:3000，规避同源策略，无需关闭 webSecurity
-// =====================================================================
 
 window.Netease = {
   // 顶层阶段：starting-api | login | api-failed
@@ -88,7 +86,6 @@ window.Netease = {
   _lyricCurrentIndex: -1, // 当前高亮歌词行索引
   _keyBound: false,       // 键盘监听是否已绑定
 
-  // -------------------------------------------------------------------
   init() {
     // 仅在音乐页面激活时才响应 Store 变化重渲染，避免其他页面改 Store 触发无谓的 100 行 DOM 重建
     Store.onChange(() => {
@@ -115,7 +112,6 @@ window.Netease = {
     }).catch(() => {});
   },
 
-  // -------------------------------------------------------------------
   // 页面渲染：顶部菜单栏 + 内容区（列表 / 扫码卡片）
   render() {
     const page = document.getElementById('page-netease');
@@ -528,7 +524,6 @@ window.Netease = {
     return box;
   },
 
-  // -------------------------------------------------------------------
   // 确保本地 API 服务已启动，再进入登录流程
   async _ensureApi() {
     this._phase = 'starting-api';
@@ -554,7 +549,6 @@ window.Netease = {
     }
   },
 
-  // -------------------------------------------------------------------
   // 尝试用本地持久化的 cookie 免扫码登录
   async _tryRestoreCookie() {
     try {
@@ -695,7 +689,6 @@ window.Netease = {
     return window.workbench.writeData('netease-data.json', {});
   },
 
-  // -------------------------------------------------------------------
   // API 封装：经主进程 IPC 代理请求 localhost:3000
   async _api(apiPath, query, cookie, method, body) {
     const res = await window.workbench.neteaseFetch({ apiPath, query, cookie: cookie || this._cookie, method, body });
@@ -727,7 +720,6 @@ window.Netease = {
     return json;
   },
 
-  // -------------------------------------------------------------------
   // 密码登录（手机号或邮箱）
   async _loginByPassword() {
     if (!this._phoneInput || !this._passwordInput) {
@@ -761,7 +753,6 @@ window.Netease = {
     }
   },
 
-  // -------------------------------------------------------------------
   // 发送验证码
   async _sendCaptcha() {
     if (!this._phoneInput) {
@@ -786,7 +777,6 @@ window.Netease = {
     this.render();
   },
 
-  // -------------------------------------------------------------------
   // 验证码登录
   async _loginByCaptcha() {
     if (!this._phoneInput || !this._captchaInput) {
@@ -818,7 +808,6 @@ window.Netease = {
     }
   },
 
-  // -------------------------------------------------------------------
   // 扫码登录流程
   async _startLogin() {
     this._stopPolling();
@@ -885,7 +874,6 @@ window.Netease = {
     }
   },
 
-  // -------------------------------------------------------------------
   // 登录成功后加载用户信息 + 喜欢数量 + 播放列表
   async _loadUserInfo() {
     try {
@@ -938,7 +926,6 @@ window.Netease = {
     }
   },
 
-  // -------------------------------------------------------------------
   // ===== 全局底部播放条（登录后常驻，任意页面可见） =====
 
   // 创建一次常驻底栏并挂到 .window-shell（不随页面 render 重建）
@@ -1029,7 +1016,6 @@ window.Netease = {
     }
   },
 
-  // -------------------------------------------------------------------
   // ===== 播放器逻辑 =====
 
   // 懒创建 audio 元素，独立挂在 body，不随 render 重建
@@ -1372,7 +1358,6 @@ window.Netease = {
     });
   },
 
-  // -------------------------------------------------------------------
   // ===== 歌词功能 =====
 
   // 切换歌词面板显隐
@@ -1501,7 +1486,6 @@ window.Netease = {
     return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
   },
 
-  // -------------------------------------------------------------------
   // 每日签到
   async _dailySignin() {
     this._signinStatus = 'pending';
@@ -1534,7 +1518,6 @@ window.Netease = {
     this.render();
   },
 
-  // -------------------------------------------------------------------
   // 打卡听歌（模拟播放指定数量的歌曲，刷每日听歌量）
   async _daka() {
     if (this._dakaStatus === 'running') return;
@@ -1608,7 +1591,6 @@ window.Netease = {
     this.render();
   },
 
-  // -------------------------------------------------------------------
   // 自动打卡（每天首次登录时执行，同一天不重复）
   _autoDaka() {
     const today = DateUtil.today();
@@ -1621,7 +1603,6 @@ window.Netease = {
     }, 2000);
   },
 
-  // -------------------------------------------------------------------
   // 自动签到（每天首次登录时执行，同一天不重复）
   _autoSignin() {
     const today = DateUtil.today();
@@ -1634,7 +1615,6 @@ window.Netease = {
     }, 1500);
   },
 
-  // -------------------------------------------------------------------
   // 加载用户等级信息
   async _loadUserLevel() {
     try {
@@ -1880,7 +1860,6 @@ window.Netease = {
     btnEl.disabled = false;
   },
 
-  // -------------------------------------------------------------------
   // 退出登录
   async _logout() {
     this._stopPolling();

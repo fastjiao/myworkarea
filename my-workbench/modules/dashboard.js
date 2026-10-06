@@ -1,17 +1,13 @@
-// =====================================================================
 // modules/dashboard.js —— 首页仪表盘模块
 // 职责：工作台门户页，展示欢迎语、快捷统计、今日签到状态、各模块入口
 // 说明：通过 window.Store / window.UI / window.switchPage 访问共享能力。
-// =====================================================================
 
 window.Dashboard = {
-  // -------------------------------------------------------------------
   init() {
     Store.onChange(() => this.render());
     this.render();
   },
 
-  // -------------------------------------------------------------------
   render() {
     const page = document.getElementById('page-dashboard');
     page.innerHTML = '';
@@ -21,9 +17,7 @@ window.Dashboard = {
     page.appendChild(this._buildEntries());
   },
 
-  // -------------------------------------------------------------------
   // 欢迎区：按时段问候 + 当前日期
-  // -------------------------------------------------------------------
   _buildWelcome() {
     const sec = UI.el('div', 'section dashboard-welcome');
     sec.appendChild(UI.el('div', 'dashboard-hello', this._greeting()));
@@ -48,9 +42,7 @@ window.Dashboard = {
     return d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + week;
   },
 
-  // -------------------------------------------------------------------
   // 快捷统计：软件 / 文件夹·文件 / 网页 / 今日事件
-  // -------------------------------------------------------------------
   _buildStats() {
     const sec = UI.el('div', 'section');
     const title = UI.el('div', 'section-title');
@@ -81,9 +73,7 @@ window.Dashboard = {
     return card;
   },
 
-  // -------------------------------------------------------------------
   // 今日签到状态：已签 / 共 / 待签，附「前往签到」按钮
-  // -------------------------------------------------------------------
   _buildSignStatus() {
     const tasks = (window.Sign && Array.isArray(window.Sign._tasks)) ? window.Sign._tasks : [];
     const today = DateUtil.today();
@@ -111,9 +101,7 @@ window.Dashboard = {
     return sec;
   },
 
-  // -------------------------------------------------------------------
   // 各模块快捷入口（点击跳转对应页）
-  // -------------------------------------------------------------------
   _buildEntries() {
     const sec = UI.el('div', 'section');
     const title = UI.el('div', 'section-title');
