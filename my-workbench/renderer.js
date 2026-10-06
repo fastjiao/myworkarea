@@ -556,7 +556,7 @@ function initWindowControls() {
   let lastDown = { time: 0, x: 0, y: 0 };
   const titlebar = document.querySelector('.titlebar');
   if (titlebar) {
-    titlebar.addEventListener('mousedown', (e) => {
+    titlebar.addEventListener('mousedown', async (e) => {
       if (e.button !== 0) return; // 只处理左键
       if (e.target.closest('.titlebar-btn')) return; // 排除按钮区域
       e.preventDefault(); // 阻止双击选词/拖拽默认行为，避免选中文字
@@ -571,7 +571,9 @@ function initWindowControls() {
         return;
       }
       lastDown = { time: now, x: e.clientX, y: e.clientY };
-      // 开始拖拽（moved 标记是否真的移动过，mouseup 时据此决定是否重置 lastDown）
+      // 通知主进程拖拽开始：若处于 snap/最大化状态先还原并跟随鼠标，否则记录拖拽前位置
+      await window.workbench.windowDragStart(e.screenX, e.screenY);
+      // 开始拖拽（moved 标记是否真的移动过，mouseup 时据此决定是否重置 lastDown / 触发 snap）
       dragState = { lastMx: e.screenX, lastMy: e.screenY, moved: false };
     });
     window.addEventListener('mousemove', (e) => {
@@ -586,8 +588,10 @@ function initWindowControls() {
       }
     });
     window.addEventListener('mouseup', () => {
-      // 拖拽过则重置 lastDown.time，避免下次 mousedown 误判双击导致反复放大缩小
-      if (dragState && dragState.moved) lastDown.time = 0;
+      if (dragState && dragState.moved) {
+        lastDown.time = 0; // 拖拽过则重置，避免下次 mousedown 误判双击
+        window.workbench.windowDragEnd(true); // 检测 Aero Snap（顶部/左/右边缘）
+      }
       dragState = null;
     });
   }
@@ -652,6 +656,8 @@ async function init() {
       sidebarToggle.title = collapsed ? '展开侧边栏' : '收起侧边栏';
       // 同步标题栏 left：收起时跟随侧边栏变窄（64px），展开时回 210px
       if (titlebarEl) titlebarEl.style.left = collapsed ? '64px' : '210px';
+      const neteaseBarEl = document.getElementById('netease-player-bar');
+      if (neteaseBarEl) neteaseBarEl.style.left = collapsed ? '64px' : '210px';
     });
   }
 

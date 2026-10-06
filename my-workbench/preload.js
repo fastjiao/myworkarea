@@ -295,5 +295,9 @@ contextBridge.exposeInMainWorld('workbench', {
   onWindowMaximizeState: (callback) => ipcRenderer.on('window:maximize-state', (event, isMax) => callback(isMax)),
 
   /** 拖拽移动窗口（标题栏手动拖拽，dx/dy 为屏幕坐标增量） */
-  windowDragMove: (dx, dy) => ipcRenderer.send('window:drag-move', dx, dy)
+  windowDragMove: (dx, dy) => ipcRenderer.send('window:drag-move', dx, dy),
+  /** 拖拽开始：若处于 snap/最大化状态先还原并跟随鼠标，否则记录拖拽前位置（Aero Snap 前置） */
+  windowDragStart: (mx, my) => ipcRenderer.invoke('window:drag-start', mx, my),
+  /** 拖拽结束：检测窗口是否拖到屏幕顶部/左/右边缘触发 Aero Snap */
+  windowDragEnd: (didMove) => ipcRenderer.send('window:drag-end', didMove)
 });

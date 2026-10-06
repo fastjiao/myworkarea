@@ -295,6 +295,9 @@ let mainWindow = null;
 // 改用手动标志 + 缓存正常态 bounds + setBounds 切换，见 toggleMaximized）
 let customMaximized = false;
 let normalBounds = null;
+// Aero Snap 状态：null | 'left' | 'right' | 'max'
+// 拖窗口到屏幕顶部/左/右边缘松开时触发 snap（半屏/最大化），拖出时还原 normalBounds
+let snapped = null;
 // 「关闭后继续后台运行」状态（与 data/bg-run.json 同步，close 拦截据此判断）
 let backgroundRun = false;
 // 是否正在真正退出（before-quit 置 true，放行 close 事件）
@@ -383,9 +386,10 @@ function createWindow() {
     }
   });
 
-  // 窗口重建时重置手动最大化状态
+  // 窗口重建时重置手动最大化/snap 状态
   customMaximized = false;
   normalBounds = null;
+  snapped = null;
 
   // 限制窗口最大尺寸不超过屏幕工作区：拖拽边缘放大时不会超过屏幕/覆盖任务栏
   // 手动最大化 toggleMaximized 用 setBounds 到 workArea（正好等于 max，不受影响）
@@ -419,24 +423,56 @@ function createWindow() {
 // 🔴 透明无边框窗口（transparent:true + frame:false）在 Windows 上 win.isMaximized/
 //    win.unmaximize 状态机不可靠：setBounds 修正任务栏覆盖后状态与尺寸脱节，
 //    unmaximize 不还原原尺寸。改用手动 setBounds 切换，彻底绕开 Windows 最大化状态机。
+/** 向渲染进程同步"是否处于最大化或半屏 snap"状态（用于切换 body.maximized 去圆角/padding） */
+function sendSnapState() {
+  if (mainWindow && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send('window:maximize-state', customMaximized || snapped !== null);
+  }
+}
+/** 还原到 snap/最大化前的正常态 bounds */
+function restoreNormal() {
+  if (!mainWindow) return;
+  const wasSnapped = customMaximized || snapped !== null;
+  if (normalBounds) mainWindow.setBounds(normalBounds);
+  customMaximized = false;
+  snapped = null;
+  if (wasSnapped) sendSnapState();
+}
+/** 最大化到工作区（排除任务栏），保留 normalBounds 供还原 */
+function applyMaximized() {
+  if (!mainWindow) return;
+  if (!customMaximized && !snapped) normalBounds = mainWindow.getBounds();
+  try {
+    const { workArea } = screen.getPrimaryDisplay();
+    mainWindow.setBounds({ x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height });
+  } catch (_) { /* 多显示器异常时退回不修正 */ }
+  customMaximized = true;
+  snapped = null;
+  sendSnapState();
+}
+/** Aero Snap 到左/右半屏（normalBounds 已由 drag-start 记录） */
+function snapToSide(side) {
+  if (!mainWindow) return;
+  try {
+    const { workArea } = screen.getPrimaryDisplay();
+    const half = Math.floor(workArea.width / 2);
+    if (side === 'left') {
+      mainWindow.setBounds({ x: workArea.x, y: workArea.y, width: half, height: workArea.height });
+    } else {
+      mainWindow.setBounds({ x: workArea.x + (workArea.width - half), y: workArea.y, width: half, height: workArea.height });
+    }
+    customMaximized = false;
+    snapped = side;
+    sendSnapState();
+  } catch (_) {}
+}
 /** 切换主窗口最大化/还原（手动 setBounds，不调 win.maximize/unmaximize） */
 function toggleMaximized() {
   if (!mainWindow) return false;
   if (customMaximized) {
-    // 还原到正常态
-    if (normalBounds) mainWindow.setBounds(normalBounds);
-    customMaximized = false;
+    restoreNormal();
   } else {
-    // 最大化到工作区（排除任务栏覆盖）
-    normalBounds = mainWindow.getBounds();
-    try {
-      const { workArea } = screen.getPrimaryDisplay();
-      mainWindow.setBounds({ x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height });
-    } catch (_) { /* 多显示器异常时退回不修正 */ }
-    customMaximized = true;
-  }
-  if (mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
-    mainWindow.webContents.send('window:maximize-state', customMaximized);
+    applyMaximized();
   }
   return customMaximized;
 }
@@ -452,13 +488,55 @@ ipcMain.handle('window:is-maximized', () => customMaximized);
 let dragFixedSize = null;
 let dragFixedTimer = null;
 ipcMain.on('window:drag-move', (event, dx, dy) => {
-  if (!mainWindow || customMaximized) return; // 最大化/全屏时不允许拖拽
+  if (!mainWindow || customMaximized || snapped) return; // snap/最大化时不允许拖拽（drag-start 会先还原）
   try {
     const b = mainWindow.getBounds();
     if (!dragFixedSize) dragFixedSize = { w: b.width, h: b.height };
     mainWindow.setBounds({ x: b.x + dx, y: b.y + dy, width: dragFixedSize.w, height: dragFixedSize.h });
     clearTimeout(dragFixedTimer);
     dragFixedTimer = setTimeout(() => { dragFixedSize = null; }, 300);
+  } catch (_) {}
+});
+
+// Aero Snap：拖拽开始/结束
+// drag-start：若处于 snap/最大化状态，先还原到正常尺寸并让窗口跟随鼠标（从最大化/半屏拖出时缩小跟随）；
+//             否则记录当前 bounds 为拖拽前位置，供 snap 后还原。
+ipcMain.handle('window:drag-start', (event, mx, my) => {
+  if (!mainWindow) return;
+  if (customMaximized || snapped) {
+    if (normalBounds) {
+      // 窗口缩小到正常尺寸，水平居中于鼠标、顶部贴近鼠标（模拟 Windows 从最大化拖出跟随手势）
+      mainWindow.setBounds({
+        x: mx - Math.floor(normalBounds.width / 2),
+        y: my - 8,
+        width: normalBounds.width,
+        height: normalBounds.height
+      });
+    }
+    customMaximized = false;
+    snapped = null;
+    sendSnapState();
+    // normalBounds 保留，拖拽中若再次 snap 仍还原到此处
+  } else {
+    normalBounds = mainWindow.getBounds();
+  }
+});
+// drag-end：检测窗口是否拖到屏幕顶部/左/右边缘，触发 Aero Snap；否则更新 normalBounds 为新正常态
+ipcMain.on('window:drag-end', (event, didMove) => {
+  if (!mainWindow || !didMove) return;
+  try {
+    const b = mainWindow.getBounds();
+    const { workArea } = screen.getPrimaryDisplay();
+    const EDGE = 8; // 距边缘阈值（px）
+    if (b.x <= workArea.x + EDGE) {
+      snapToSide('left');
+    } else if (b.x + b.width >= workArea.x + workArea.width - EDGE) {
+      snapToSide('right');
+    } else if (b.y <= workArea.y + EDGE) {
+      applyMaximized();
+    } else {
+      normalBounds = b; // 未 snap，更新正常态位置
+    }
   } catch (_) {}
 });
 

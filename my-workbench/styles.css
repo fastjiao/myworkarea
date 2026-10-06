@@ -17,13 +17,14 @@
   --accent: #A9C2FF;
   /* 系统白：内容区背景 */
   --bg: #F4F7FF;
+  --main-bg: #ffffff;
   /* 深界面蓝：侧边栏背景与主文字色 */
-  --deep: #2F3E66;
-  /* 侧边栏背景：半透明深蓝玻璃 */
-  --sidebar-bg: rgba(47, 62, 102, 0.88);
-  /* 侧边栏文字：科技浅蓝 */
-  --sidebar-text: #A9C2FF;
-  --sidebar-text-active: #ffffff;
+  --deep: #1E293B;
+  /* 侧边栏背景：半透明浅蓝玻璃 */
+  --sidebar-bg: rgba(169, 194, 255, 0.55);
+  /* 侧边栏文字：深灰蓝（浅蓝底上可读） */
+  --sidebar-text: #1E293B;
+  --sidebar-text-active: #0F172A;
   /* 实底卡面（输入框 / 编辑器等需要不透明底的地方） */
   --card-bg: #ffffff;
   /* 玻璃卡面：悬浮半透明白玻璃 */
@@ -32,7 +33,7 @@
   --glass-border: rgba(255, 255, 255, 0.65);
   /* 悬停背景：科技浅蓝的淡化 */
   --hover-bg: #EDF2FF;
-  --text: #2F3E66;
+  --text: #1E293B;
   --text-sub: #5A6A94;
   --text-muted: #92A0C2;
   /* 常规描边（输入框 / 标签等需要清晰边框处） */
@@ -49,10 +50,10 @@
   /* 别名兼容：部分模块引用的等价变量 */
   --bg-primary: #ffffff;
   --bg-secondary: #F0F4FF;
-  --text-primary: #2F3E66;
+  --text-primary: #1E293B;
   /* 自定义窗口外壳：标题栏背景/文字 + 外圈描边 */
   --titlebar-bg: rgba(255, 255, 255, 0.92);
-  --titlebar-text: #2F3E66;
+  --titlebar-text: #1E293B;
   --window-border: rgba(47, 62, 102, 0.12);
   --window-shadow: 0 10px 40px rgba(47, 62, 102, 0.18);
 }
@@ -63,6 +64,7 @@
   --accent: #A9C2FF;
   /* 暗色下主背景：偏蓝的深色 */
   --bg: #0E1327;
+  --main-bg: #0E1327;
   --deep: #2F3E66;
   --sidebar-bg: rgba(14, 19, 39, 0.85);
   --sidebar-text: #8FA3D1;
@@ -101,6 +103,11 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+/* 所有按钮禁止选中文字：连续点击/长按时不会高亮按钮内文字（输入框仍可选） */
+button {
+  user-select: none;
 }
 
 [hidden] {
@@ -162,7 +169,7 @@ body.maximized .titlebar {
   top: 0;
   left: 210px; /* 只覆盖主内容区顶部，不覆盖侧边栏（让侧边栏内容可向上移到顶部） */
   right: 0;
-  height: 36px;
+  height: 44px;
   padding: 0 8px 0 14px;
   background: var(--titlebar-bg); /* 半透明毛玻璃，内容滚到下方时模糊不穿透 */
   backdrop-filter: blur(20px) saturate(150%);
@@ -191,7 +198,7 @@ body.maximized .titlebar {
 .netease-titlebar-content[hidden] {
   display: none;
 }
-/* 嵌入标题栏时 topbar 紧凑化：去掉额外 padding/margin，适配 36px 高度 */
+/* 嵌入标题栏时 topbar 紧凑化：去掉额外 padding/margin，适配 44px 高度 */
 .netease-titlebar-content .netease-topbar {
   width: 100%;
   padding: 0;
@@ -207,6 +214,18 @@ body.maximized .titlebar {
 }
 .netease-titlebar-content .netease-topbar .netease-search-bar {
   max-width: 260px;
+  margin: 0;
+}
+.netease-titlebar-content .netease-search-input {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+.netease-titlebar-content .netease-search-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
 }
 .netease-titlebar-content .netease-topbar-menu {
   padding: 4px 10px;
@@ -220,7 +239,7 @@ body.maximized .titlebar {
 /* Windows 风格三按钮：最小化 ─ / 最大化 □ / 关闭 ✕ */
 .titlebar-btn {
   width: 46px;
-  height: 36px;
+  height: 44px;
   border: none;
   background: transparent;
   cursor: pointer;
@@ -323,7 +342,7 @@ body.maximized .titlebar {
   position: relative;
   z-index: 1;
   display: flex;
-  flex: 1; /* 填满 .window-shell 剩余空间（扣除 .titlebar 36px） */
+  flex: 1; /* 填满 .window-shell 剩余空间（扣除 .titlebar 44px） */
   min-height: 0; /* 允许 flex 子元素收缩，防止内容溢出圆角 */
 }
 
@@ -332,6 +351,7 @@ body.maximized .titlebar {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  background: var(--main-bg);
 }
 
 /* ---------------------------------------------------------------------
@@ -340,7 +360,7 @@ body.maximized .titlebar {
 .sidebar {
   width: 210px;
   flex-shrink: 0;
-  /* 半透明深蓝玻璃：透过背景层粒子与光晕 */
+  /* 半透明浅蓝玻璃：透过背景层粒子与光晕 */
   background: var(--sidebar-bg);
   backdrop-filter: blur(20px) saturate(150%);
   -webkit-backdrop-filter: blur(20px) saturate(150%);
@@ -359,9 +379,9 @@ body.maximized .titlebar {
   gap: 8px;
   font-size: 15px;
   font-weight: 700;
-  color: #ffffff;
+  color: #1E293B;
   padding: 0 16px 24px;
-  white-space:$ nowrap;
+  white-space: nowrap;
   /* 品牌发光已移除：原 text-shadow 浅蓝光晕在文字下方扩散成白色底纹 */
 }
 
@@ -384,14 +404,14 @@ body.maximized .titlebar {
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: #ffffff;
+  color: #1E293B;
   cursor: pointer;
   opacity: 0.7;
   transition: background 0.15s, opacity 0.15s;
 }
 
 .sidebar-toggle:hover {
-  background: rgba(169, 194, 255, 0.18);
+  background: rgba(95, 134, 255, 0.14);
   opacity: 1;
 }
 
@@ -430,7 +450,7 @@ body.maximized .titlebar {
 }
 
 .nav-item:hover {
-  background: rgba(169, 194, 255, 0.16);
+  background: rgba(95, 134, 255, 0.14);
   color: var(--sidebar-text-active);
 }
 
@@ -462,7 +482,7 @@ body.maximized .titlebar {
   flex: 1;
   min-width: 0;
   padding: 9px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(95, 134, 255, 0.22);
   border-radius: 8px;
   background: transparent;
   color: var(--sidebar-text);
@@ -472,7 +492,7 @@ body.maximized .titlebar {
 }
 
 .theme-toggle:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(95, 134, 255, 0.1);
 }
 
 /* 设置入口：齿轮图标 + "设置"文字（收起时只显示齿轮） */
@@ -483,7 +503,7 @@ body.maximized .titlebar {
   justify-content: center;
   gap: 8px;
   padding: 9px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(95, 134, 255, 0.22);
   border-radius: 8px;
   background: transparent;
   color: var(--sidebar-text);
@@ -517,7 +537,7 @@ body.maximized .titlebar {
 }
 
 .settings-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(95, 134, 255, 0.1);
   color: var(--sidebar-text-active);
   border-color: rgba(169, 194, 255, 0.4);
 }
@@ -528,7 +548,7 @@ body.maximized .titlebar {
 .app-main {
   flex: 1;
   overflow-y: auto;
-  padding: 60px 24px 24px; /* 顶部 60px = 标题栏 36px + 原 24px，让主内容从标题栏下方开始 */
+  padding: 68px 24px 24px; /* 顶部 68px = 标题栏 44px + 原 24px，让主内容从标题栏下方开始 */
 }
 
 .page {
@@ -543,7 +563,7 @@ body.maximized .titlebar {
    改用 flex 撑开（避免 height:100% 百分比高度链依赖），
    切到内嵌页面时 .app-main 变为纵向 flex，.page-embed 占据全部剩余空间 */
 .app-main:has(.page-embed.active) {
-  padding: 36px 0 0; /* 顶部 36px = 标题栏高度，webview 从标题栏下方铺满 */
+  padding: 44px 0 0; /* 顶部 44px = 标题栏高度，webview 从标题栏下方铺满 */
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -2025,6 +2045,12 @@ details.sign-advanced .form-item {
     font-size: 0;
     padding: 0 12px 20px;
     text-align: center;
+    justify-content: center; /* "JG" 居中，与下方导航项图标对齐 */
+  }
+
+  /* 窄屏已自动收窄，隐藏手动收起/展开按钮，避免与 "JG" 挤在 space-between 两端 */
+  .sidebar-toggle {
+    display: none;
   }
 
   .sidebar-brand::before {
@@ -2040,6 +2066,16 @@ details.sign-advanced .form-item {
 
   .nav-label {
     display: none;
+  }
+
+  /* 窄屏设置入口只留齿轮图标，与导航项图标统一居中 */
+  .settings-label {
+    display: none;
+  }
+
+  .settings-btn {
+    padding: 9px 0;
+    justify-content: center;
   }
 
   .theme-toggle {
@@ -2206,7 +2242,7 @@ details.sign-advanced .form-item {
    ===================================================================== */
 .clock-widget {
   position: absolute;
-  top: 50px; /* 避开自定义标题栏（36px）+ 14px 间距 */
+  top: 58px; /* 避开自定义标题栏（44px）+ 14px 间距 */
   right: 16px;
   z-index: 50; /* 低于右键菜单(100)/模态框(200)/Toast(300)，高于背景层 */
   -webkit-app-region: no-drag; /* Electron 拖拽区适配：保证可点击 */
@@ -3256,7 +3292,7 @@ body[data-theme='light'] .netease-like-btn:hover {
 
 /* ===== 全局底部播放条 ===== */
 .netease-player-bar {
-  position: fixed;
+  position: absolute;        /* 相对 .window-shell，被其 overflow:hidden 裁剪到圆角内，非最大化时不漏到圆角外 */
   left: 210px;           /* 避开左侧侧边栏 */
   right: 0;
   bottom: 0;
@@ -3275,6 +3311,10 @@ body[data-theme='light'] .netease-like-btn:hover {
 }
 .netease-player-bar.show {
   transform: translateY(0);
+}
+/* 播放条可见时，主内容区底部留出空间避免列表被遮挡 */
+body.netease-bar-active .app-main {
+  padding-bottom: 100px;
 }
 .netease-bar-now {
   width: 220px;
@@ -3355,7 +3395,7 @@ body[data-theme='light'] .netease-user-popup { background: rgba(255,255,255,0.96
 
 /* ===== 歌词面板 ===== */
 .netease-lyric-panel {
-  position: fixed;
+  position: absolute;      /* 相对 .window-shell，被裁剪到圆角内，与播放条一致 */
   left: 210px;
   right: 0;
   bottom: 76px;

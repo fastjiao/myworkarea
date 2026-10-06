@@ -941,7 +941,9 @@ window.Netease = {
   // -------------------------------------------------------------------
   // ===== 全局底部播放条（登录后常驻，任意页面可见） =====
 
-  // 创建一次常驻底栏并挂到 body（不随页面 render 重建）
+  // 创建一次常驻底栏并挂到 .window-shell（不随页面 render 重建）
+  // 挂在 window-shell 内 + position:absolute，使其被窗口外壳 overflow:hidden 裁剪到圆角内，
+  // 非最大化时不漏到圆角/白边外（原挂 body + fixed 会超出 window-shell 底部 8px 留白）
   _ensureGlobalBar() {
     if (this._barEl) return this._barEl;
     const bar = UI.el('div', 'netease-player-bar');
@@ -1005,7 +1007,8 @@ window.Netease = {
     ctrl.appendChild(modeBtn);
     bar.appendChild(ctrl);
 
-    document.body.appendChild(bar);
+    const shell = document.querySelector('.window-shell') || document.body;
+    shell.appendChild(bar);
     this._barEl = bar;
     return bar;
   },
@@ -1383,7 +1386,7 @@ window.Netease = {
     }
   },
 
-  // 创建歌词面板（挂到 document.body，固定定位居中半透明黑底）
+  // 创建歌词面板（挂到 .window-shell，绝对定位居中半透明黑底，与播放条同被圆角裁剪）
   _ensureLyricPanel() {
     if (this._lyricEl) return this._lyricEl;
     const panel = UI.el('div', 'netease-lyric-panel');
@@ -1408,7 +1411,8 @@ window.Netease = {
         panel.classList.remove('show');
       }
     });
-    document.body.appendChild(panel);
+    const shell = document.querySelector('.window-shell') || document.body;
+    shell.appendChild(panel);
     this._lyricEl = panel;
     return panel;
   },
