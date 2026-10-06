@@ -119,10 +119,18 @@ window.Sign = {
     const actions = UI.el('div', 'skill-actions');
 
     const signBtn = UI.el('button', 'btn btn-primary btn-sm');
-    signBtn.textContent = '签到';
+    const wbSignedToday = task.taskType === 'workbuddy' && task.lastSignDate === DateUtil.today();
+    signBtn.textContent = wbSignedToday ? '已签·重验' : '签到';
     signBtn.disabled = !!this._running[task.id];
     signBtn.addEventListener('click', () => this._doSign(task));
     actions.appendChild(signBtn);
+
+    if (task.taskType === 'workbuddy') {
+      const calBtn = UI.el('button', 'btn btn-ghost btn-sm');
+      calBtn.textContent = '校准';
+      calBtn.addEventListener('click', () => this._calibrateWorkbuddy(task));
+      actions.appendChild(calBtn);
+    }
 
     const editBtn = UI.el('button', 'btn btn-ghost btn-sm');
     editBtn.textContent = '编辑';
@@ -143,8 +151,21 @@ window.Sign = {
     if (this._running[task.id]) return;
     // 今日已签到（lastSignDate 持久化于 data/sign-tasks.json）：不重复请求
     if (task.lastSignDate === DateUtil.today()) {
-      UI.setToast(`「${task.name}」今日已签到，无需重复签到`, 'info');
-      return;
+      if (task.taskType === 'workbuddy') {
+        const re = await window.workbench.workbuddyStatus({ procName: task.procName || 'WorkBuddy' });
+        if (re && re.ok && re.todayCheckedIn) {
+          UI.setToast(`「${task.name}」服务端已记录今日已签，无需重复`, 'success');
+          task.lastSignDate = DateUtil.today();
+          await this._persist();
+          return;
+        }
+        UI.setToast(`「${task.name}」本地标记已签但服务端未签，重新执行签到`, 'info');
+        task.lastSignDate = '';
+        await this._persist();
+      } else {
+        UI.setToast(`「${task.name}」今日已签到，无需重复签到`, 'info');
+        return;
+      }
     }
     this._running[task.id] = { success: false, message: '' };
     this.render();
@@ -155,7 +176,7 @@ window.Sign = {
     try {
       // UI Automation 桌面应用签到（不碰鼠标，程序化 Invoke 按钮）
       if (task.taskType === 'uia') {
-        const res = await window.workbench.executeUiaSign({
+        const uiaParams = {
           exePath: task.exePath || '',
           procName: task.procName || '',
           exeArgs: task.exeArgs || [],
@@ -166,11 +187,25 @@ window.Sign = {
           doneKeywords: task.doneKeywords || '',
           successKeywords: task.successKeywords || '',
           navName: task.navName || ''
-        });
-        verdict = {
-          success: res.success,
-          message: res.message || (res.success ? '签到成功' : '签到失败')
         };
+        const _uiaFallback = async () => {
+          const res = await window.workbench.executeUiaSign(uiaParams);
+          return { success: res.success, message: res.message || (res.success ? '签到成功' : '签到失败') };
+        };
+        if ((task.procName || '').toLowerCase() === 'hyperdown' && window.workbench.executeHyperdownCdpSign) {
+          try {
+            const cdpRes = await window.workbench.executeHyperdownCdpSign({ exePath: task.exePath || '' });
+            if (cdpRes.success) {
+              verdict = { success: true, message: cdpRes.message || '签到成功' };
+            } else {
+              verdict = await _uiaFallback();
+            }
+          } catch (e) {
+            verdict = await _uiaFallback();
+          }
+        } else {
+          verdict = await _uiaFallback();
+        }
       } else if (task.taskType === 'wps') {
         const res = await window.workbench.executeWpsSign({ cookie: task.cookie || '' });
         verdict = {
@@ -275,6 +310,31 @@ window.Sign = {
       await new Promise(r => setTimeout(r, 500));
     }
     UI.setToast('全部签到任务执行完毕', 'success');
+  },
+
+  // -------------------------------------------------------------------
+  async _calibrateWorkbuddy(task) {
+    if (this._running[task.id]) return;
+    UI.setToast(`正在校准「${task.name}」状态...`, 'info');
+    try {
+      const re = await window.workbench.workbuddyStatus({ procName: task.procName || 'WorkBuddy' });
+      if (!re || !re.ok) {
+        UI.setToast(`校准失败：${(re && re.error) || '查询失败'}`, 'error');
+        return;
+      }
+      if (re.todayCheckedIn) {
+        task.lastSignDate = DateUtil.today();
+        await this._persist();
+        UI.setToast(`校准完成：服务端已记录今日已签${re.streakDays != null ? '（连续' + re.streakDays + '天）' : ''}`, 'success');
+      } else {
+        task.lastSignDate = '';
+        await this._persist();
+        UI.setToast('校准完成：服务端记录今日未签到，已清除本地假成功标记', 'info');
+      }
+      this.render();
+    } catch (e) {
+      UI.setToast('校准异常：' + e.message, 'error');
+    }
   },
 
   // -------------------------------------------------------------------

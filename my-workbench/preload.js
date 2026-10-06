@@ -169,6 +169,13 @@ contextBridge.exposeInMainWorld('workbench', {
   executeWorkbuddySign: (params) => ipcRenderer.invoke('sign:workbuddy-sign', params),
 
   /**
+   * WorkBuddy 签到状态查询：只查服务端状态，不触发签到
+   * @param {{ procName?: string }} params
+   * @returns {Promise<{ok: boolean, todayCheckedIn?: boolean, streakDays?: number, message?: string, error?: string}>}
+   */
+  workbuddyStatus: (params) => ipcRenderer.invoke('sign:workbuddy-status', params),
+
+  /**
    * 打开网页登录窗口（登录后 cookie 持久化，供一键抓取）
    * @param {{ url: string }} params 签到接口 URL
    * @returns {Promise<{success: boolean, loginUrl?: string, message?: string}>}
@@ -239,6 +246,14 @@ contextBridge.exposeInMainWorld('workbench', {
    * @returns {Promise<{success: boolean, message: string, results?: Array}>}
    */
   executeUiaSign: (params) => ipcRenderer.invoke('sign:execute-uia', params),
+
+  /**
+   * Hyperdown CDP 后台签到：开启 WebView2 远程调试端口 → CDP 注入 JS 点击签到按钮
+   * 不打开前台页面，和 WorkBuddy 一样后台完成
+   * @param {{ exePath?: string }} params
+   * @returns {Promise<{success: boolean, message?: string, error?: string, alreadyCheckedIn?: boolean}>}
+   */
+  executeHyperdownCdpSign: (params) => ipcRenderer.invoke('sign:hyperdown-cdp-sign', params),
 
   /**
    * 获取内置 PowerShell 脚本模板

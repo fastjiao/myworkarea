@@ -1716,60 +1716,411 @@ ipcMain.handle('sign:execute-http', async (event, params) => {
 });
 
 /**
+ * 从 WorkBuddy 进程内存提取 accessToken（JWT）
+ * @param {string} procName 进程名
+ * @returns {Promise<string|null>}
+ */
+async function _wbExtractToken(procName) {
+  const { execFile } = require('child_process');
+  const scannerPath = path.join(__dirname, 'data', 'tools', 'MemoryScan.exe');
+  return new Promise((resolve) => {
+    execFile(scannerPath, [procName], {
+      windowsHide: true,
+      timeout: 120000,
+      maxBuffer: 10 * 1024 * 1024
+    }, (err, stdout) => {
+      if (err) { resolve(null); return; }
+      const t = String(stdout).trim();
+      resolve(t.startsWith('eyJ') ? t : null);
+    });
+  });
+}
+
+// ---------------------------------------------------------------------
+// WorkBuddy token 缓存层（P0-1）
+// 避免每次签到都全量扫描进程内存（MemoryScan.exe timeout 120s）
+// 内存缓存 + 磁盘持久化 data/wb-token.json，按 JWT exp 自动过期
+// 仅在缓存未命中 / 过期 / 401 失效时才回退到 _wbExtractToken
+// ---------------------------------------------------------------------
+const WB_TOKEN_CACHE_FILE = path.join(DATA_DIR, 'wb-token.json');
+let _wbTokenCache = null; // { token, exp, procName, ts }
+
+function _wbLoadTokenCache() {
+  if (_wbTokenCache) return _wbTokenCache;
+  try {
+    _wbTokenCache = JSON.parse(fs.readFileSync(WB_TOKEN_CACHE_FILE, 'utf8'));
+  } catch (e) {
+    _wbTokenCache = null;
+  }
+  return _wbTokenCache;
+}
+
+function _wbSaveTokenCache(token, exp, procName) {
+  _wbTokenCache = { token, exp, procName, ts: Date.now() };
+  try {
+    fs.writeFileSync(WB_TOKEN_CACHE_FILE, JSON.stringify(_wbTokenCache), 'utf8');
+  } catch (e) {}
+}
+
+// 解析 JWT exp（秒级 → 毫秒）；失败返回 0
+function _wbJwtExp(token) {
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) return 0;
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+    return payload.exp ? payload.exp * 1000 : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+// 带缓存的 token 提取：命中未过期缓存直接返回；否则扫内存并写回缓存
+// 安全余量 5min：距 exp 不足 5min 视为过期，避免签到中途失效
+async function _wbGetToken(procName) {
+  const cache = _wbLoadTokenCache();
+  const now = Date.now();
+  if (cache && cache.token && cache.exp && (cache.exp - now) > 5 * 60 * 1000) {
+    return cache.token;
+  }
+  const token = await _wbExtractToken(procName);
+  if (token) {
+    const exp = _wbJwtExp(token);
+    if (exp > now) _wbSaveTokenCache(token, exp, procName);
+  }
+  return token;
+}
+
+// token 失效时清缓存（401 / 状态查询失败时调用）
+function _wbInvalidateToken() {
+  _wbTokenCache = null;
+  try { fs.unlinkSync(WB_TOKEN_CACHE_FILE); } catch (e) {}
+}
+
+/**
+ * 查询 WorkBuddy 签到状态（严格判定，杜绝 truthy 误判）
+ * @param {string} token JWT
+ * @returns {Promise<{ok: boolean, todayCheckedIn: boolean, streakDays?: number, code?: number, error?: string}>}
+ */
+async function _wbQueryStatus(token) {
+  const statusUrl = 'https://www.workbuddy.cn/v2/billing/meter/checkin-activity-status';
+  const headers = {
+    'content-type': 'application/json',
+    'authorization': 'Bearer ' + token,
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+  };
+  const res = await signHttpRequest({ url: statusUrl, method: 'POST', headers, body: '{}' });
+  if (res.error) return { ok: false, todayCheckedIn: false, error: '查询签到状态失败：' + res.error };
+  try {
+    const data = JSON.parse(res.body);
+    if (data.code === 0 && data.data) {
+      const checked = data.data.today_checked_in === true || data.data.today_checked_in === 1;
+      return { ok: true, todayCheckedIn: checked, streakDays: data.data.streak_days, code: 0 };
+    }
+    return { ok: false, todayCheckedIn: false, code: data.code, error: '状态接口返回异常：code=' + data.code + ' msg=' + (data.msg || '') };
+  } catch (e) {
+    return { ok: false, todayCheckedIn: false, error: '状态响应解析失败：' + String(res.body).slice(0, 120) };
+  }
+}
+
+/**
  * WorkBuddy 签到：从进程内存提取 accessToken → 调用签到 API
  * 需要先安装 data/tools/MemoryScan.exe（C# 编译的内存扫描工具）
+ * 严格判定：token 无效 / 接口非 code:0 一律失败；区分"服务端已签"与"本次真签到"，
+ * 并在本次签到后二次校验状态，避免假成功被持久化。
  */
 ipcMain.handle('sign:workbuddy-sign', async (event, params) => {
   try {
-    const { execFile } = require('child_process');
-    const scannerPath = path.join(__dirname, 'data', 'tools', 'MemoryScan.exe');
     const procName = (params && params.procName) || 'WorkBuddy';
-
-    const token = await new Promise((resolve) => {
-      execFile(scannerPath, [procName], {
-        windowsHide: true,
-        timeout: 120000,
-        maxBuffer: 10 * 1024 * 1024
-      }, (err, stdout, stderr) => {
-        if (err) { resolve(null); return; }
-        const t = String(stdout).trim();
-        resolve(t.startsWith('eyJ') ? t : null);
-      });
-    });
-
+    // P0-1: 优先用缓存 token；查询失败时清缓存重新提取一次再试
+    let token = await _wbGetToken(procName);
     if (!token) return { ok: false, error: '未能从 WorkBuddy 进程内存提取 accessToken，请确认 WorkBuddy 正在运行' };
 
     const apiUrl = 'https://www.workbuddy.cn/v2/billing/meter/daily-checkin';
-    const statusUrl = 'https://www.workbuddy.cn/v2/billing/meter/checkin-activity-status';
-    const headers = {
+    const buildHeaders = (tk) => ({
       'content-type': 'application/json',
-      'authorization': 'Bearer ' + token,
+      'authorization': 'Bearer ' + tk,
       'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-    };
+    });
 
-    const statusRes = await signHttpRequest({ url: statusUrl, method: 'POST', headers, body: '{}' });
-    if (statusRes.error) return { ok: false, error: '查询签到状态失败：' + statusRes.error };
-    try {
-      const statusData = JSON.parse(statusRes.body);
-      if (statusData.code === 0 && statusData.data && statusData.data.today_checked_in) {
-        return { ok: true, alreadyCheckedIn: true, message: '今日已领取（连续' + statusData.data.streak_days + '天）' };
+    let status = await _wbQueryStatus(token);
+    if (!status.ok) {
+      // token 可能已过期：清缓存重新提取一次再试
+      _wbInvalidateToken();
+      const fresh = await _wbGetToken(procName);
+      if (fresh && fresh !== token) {
+        token = fresh;
+        status = await _wbQueryStatus(token);
       }
-    } catch (e) {}
+    }
+    if (!status.ok) return { ok: false, error: status.error || '查询签到状态失败' };
+    if (status.todayCheckedIn) {
+      return { ok: true, alreadyCheckedIn: true, message: '服务端记录今日已领取（连续' + (status.streakDays ?? '?') + '天）' };
+    }
 
-    const checkinRes = await signHttpRequest({ url: apiUrl, method: 'POST', headers, body: '{}' });
+    const checkinRes = await signHttpRequest({ url: apiUrl, method: 'POST', headers: buildHeaders(token), body: '{}' });
     if (checkinRes.error) return { ok: false, error: '签到请求失败：' + checkinRes.error };
 
+    let credit = null, streak = null;
     try {
       const data = JSON.parse(checkinRes.body);
-      if (data.code === 0 && data.data) {
-        return { ok: true, message: '领取成功，获得 ' + data.data.credit + ' 积分（连续' + data.data.streak_days + '天）' };
+      if (data.code !== 0 || !data.data) {
+        return { ok: false, error: '签到失败：' + (data.msg || checkinRes.body) };
       }
-      return { ok: false, error: '签到失败：' + (data.msg || checkinRes.body) };
+      credit = data.data.credit;
+      streak = data.data.streak_days;
     } catch (e) {
-      return { ok: false, error: '响应解析失败：' + checkinRes.body };
+      return { ok: false, error: '签到响应解析失败：' + String(checkinRes.body).slice(0, 120) };
     }
+
+    // P0-2: 二次校验改异步后台，不阻塞签到结果返回
+    // 签到接口已返回 code:0 即视为成功；后台校验仅用于发现假成功
+    setImmediate(async () => {
+      try {
+        const recheck = await _wbQueryStatus(token);
+        if (!recheck.ok || !recheck.todayCheckedIn) {
+          console.warn('[workbuddy] 后台二次校验未通过，下次签到将重试');
+        }
+      } catch (e) {}
+    });
+
+    return {
+      ok: true,
+      checkedInNow: true,
+      verified: null,
+      message: '领取成功，获得 ' + credit + ' 积分（连续' + (streak ?? '?') + '天）'
+    };
   } catch (err) {
     return { ok: false, error: err.message };
+  }
+});
+
+/**
+ * WorkBuddy 签到状态查询：只查服务端状态，不触发签到
+ * 用于"校准状态"按钮 / 已签重验，避免本地假成功记录锁死当天
+ */
+ipcMain.handle('sign:workbuddy-status', async (event, params) => {
+  try {
+    const procName = (params && params.procName) || 'WorkBuddy';
+    let token = await _wbGetToken(procName);
+    if (!token) return { ok: false, error: '未能从 WorkBuddy 进程内存提取 accessToken，请确认 WorkBuddy 正在运行' };
+
+    let status = await _wbQueryStatus(token);
+    if (!status.ok) {
+      _wbInvalidateToken();
+      const fresh = await _wbGetToken(procName);
+      if (fresh && fresh !== token) {
+        token = fresh;
+        status = await _wbQueryStatus(token);
+      }
+    }
+    if (!status.ok) return { ok: false, error: status.error || '查询签到状态失败' };
+    return {
+      ok: true,
+      todayCheckedIn: status.todayCheckedIn,
+      streakDays: status.streakDays,
+      message: status.todayCheckedIn
+        ? '服务端记录今日已领取（连续' + (status.streakDays ?? '?') + '天）'
+        : '服务端记录今日未签到'
+    };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+// ---------------------------------------------------------------------
+// Hyperdown CDP 后台签到
+// Hyperdown 是 Wails/WebView2 应用，POST /me/checkins 有 secure_request_required
+// 反爬，纯 HTTP 复刻需逆向 exe 算法。改为开启 WebView2 远程调试端口，通过 CDP
+// 注入 JS 点击签到按钮，让客户端自己生成安全校验发请求——绕过反爬，且窗口无需
+// 在前台（和 WorkBuddy 一样后台完成）。
+// ---------------------------------------------------------------------
+const HD_CDP_PORT = 9223;
+
+/**
+ * 最小 WebSocket 客户端（用 net 模块手写，专用于 CDP 文本帧 / JSON 消息）
+ * @param {string} wsUrl ws://127.0.0.1:port/devtools/page/xxx
+ * @returns {Promise<{sendCommand: Function, close: Function}>}
+ */
+function _cdpConnect(wsUrl) {
+  const net = require('net');
+  const crypto = require('crypto');
+  return new Promise((resolve, reject) => {
+    let u;
+    try { u = new URL(wsUrl); } catch (e) { reject(e); return; }
+    const port = Number(u.port) || 80;
+    const host = u.hostname;
+    const reqPath = u.pathname + u.search;
+    const wsKey = crypto.randomBytes(16).toString('base64');
+    const socket = net.connect(port, host);
+    let handshakeDone = false;
+    let rxBuf = Buffer.alloc(0);
+    let fragBuf = '';
+    let nextId = 1;
+    const pending = new Map();
+
+    function _close() {
+      for (const [, p] of pending) { clearTimeout(p.timer); p.reject(new Error('CDP 连接已关闭')); }
+      pending.clear();
+      try { socket.destroy(); } catch (e) {}
+    }
+
+    function _writeFrame(opcode, payload) {
+      const len = payload.length;
+      let header;
+      if (len < 126) {
+        header = Buffer.alloc(6);
+        header[0] = 0x80 | opcode;
+        header[1] = 0x80 | len;
+      } else if (len < 65536) {
+        header = Buffer.alloc(8);
+        header[0] = 0x80 | opcode;
+        header[1] = 0x80 | 126;
+        header.writeUInt16BE(len, 2);
+      } else {
+        header = Buffer.alloc(14);
+        header[0] = 0x80 | opcode;
+        header[1] = 0x80 | 127;
+        header.writeUInt32BE(0, 2);
+        header.writeUInt32BE(len, 6);
+      }
+      const mask = crypto.randomBytes(4);
+      mask.copy(header, header.length - 4);
+      const masked = Buffer.alloc(len);
+      for (let i = 0; i < len; i++) masked[i] = payload[i] ^ mask[i % 4];
+      socket.write(Buffer.concat([header, masked]));
+    }
+
+    function sendCommand(method, params, timeoutMs) {
+      return new Promise((res, rej) => {
+        const id = nextId++;
+        _writeFrame(0x1, Buffer.from(JSON.stringify({ id, method, params: params || {} }), 'utf8'));
+        const t = setTimeout(() => { pending.delete(id); rej(new Error('CDP 命令超时: ' + method)); }, timeoutMs || 15000);
+        pending.set(id, { resolve: res, reject: rej, timer: t });
+      });
+    }
+
+    function _onMessage(text) {
+      let msg;
+      try { msg = JSON.parse(text); } catch (e) { return; }
+      if (msg.id && pending.has(msg.id)) {
+        const p = pending.get(msg.id);
+        pending.delete(msg.id);
+        clearTimeout(p.timer);
+        if (msg.error) p.reject(new Error(msg.error.message || JSON.stringify(msg.error)));
+        else p.resolve(msg.result);
+      }
+    }
+
+    function _parseFrames() {
+      while (rxBuf.length >= 2) {
+        const b0 = rxBuf[0], b1 = rxBuf[1];
+        const fin = (b0 & 0x80) !== 0;
+        const opcode = b0 & 0x0f;
+        const masked = (b1 & 0x80) !== 0;
+        let payloadLen = b1 & 0x7f;
+        let offset = 2;
+        if (payloadLen === 126) {
+          if (rxBuf.length < 4) return;
+          payloadLen = rxBuf.readUInt16BE(2); offset = 4;
+        } else if (payloadLen === 127) {
+          if (rxBuf.length < 10) return;
+          payloadLen = rxBuf.readUInt32BE(6); offset = 10;
+        }
+        let maskKey = null;
+        if (masked) {
+          if (rxBuf.length < offset + 4) return;
+          maskKey = rxBuf.slice(offset, offset + 4); offset += 4;
+        }
+        if (rxBuf.length < offset + payloadLen) return;
+        let payload = rxBuf.slice(offset, offset + payloadLen);
+        if (masked) for (let i = 0; i < payload.length; i++) payload[i] ^= maskKey[i % 4];
+        rxBuf = rxBuf.slice(offset + payloadLen);
+        if (opcode === 0x8) { _close(); return; }
+        if (opcode === 0x9) { _writeFrame(0xA, payload); continue; }
+        if (opcode === 0x1 || opcode === 0x0) {
+          fragBuf += payload.toString('utf8');
+          if (fin) { const t = fragBuf; fragBuf = ''; _onMessage(t); }
+        }
+      }
+    }
+
+    socket.on('connect', () => {
+      socket.write([
+        'GET ' + reqPath + ' HTTP/1.1',
+        'Host: ' + host + ':' + port,
+        'Upgrade: websocket',
+        'Connection: Upgrade',
+        'Sec-WebSocket-Key: ' + wsKey,
+        'Sec-WebSocket-Version: 13',
+        '', ''
+      ].join('\r\n'));
+    });
+    socket.on('data', (chunk) => {
+      rxBuf = Buffer.concat([rxBuf, chunk]);
+      if (!handshakeDone) {
+        const idx = rxBuf.indexOf('\r\n\r\n');
+        if (idx < 0) return;
+        const header = rxBuf.slice(0, idx).toString();
+        rxBuf = rxBuf.slice(idx + 4);
+        if (header.indexOf(' 101 ') < 0) { reject(new Error('WS 握手失败: ' + header.split('\r\n')[0])); socket.destroy(); return; }
+        handshakeDone = true;
+        resolve({ sendCommand, close: _close });
+      }
+      _parseFrames();
+    });
+    socket.on('error', (err) => { if (!handshakeDone) reject(err); else _close(); });
+  });
+}
+
+async function _hdListCdpTargets() {
+  const res = await signHttpRequest({ url: 'http://127.0.0.1:' + HD_CDP_PORT + '/json', method: 'GET', timeout: 3000 });
+  if (res.error) return null;
+  try { return JSON.parse(res.body); } catch (e) { return null; }
+}
+
+async function _hdEnsureCdpReady() {
+  // 只检测 CDP 端口是否可用，不启动/不杀进程
+  // WebView2 远程调试端口需 Hyperdown 启动时自行开启（Wails 可能覆盖环境变量）
+  const targets = await _hdListCdpTargets();
+  return !!(targets && targets.some(t => t.type === 'page'));
+}
+
+ipcMain.handle('sign:hyperdown-cdp-sign', async (event, params) => {
+  try {
+    const exePath = (params && params.exePath) || '';
+    const ready = await _hdEnsureCdpReady();
+    if (!ready) return { success: false, message: '无法连接 Hyperdown CDP 调试端口，请确认 Hyperdown 已安装' };
+    const targets = await _hdListCdpTargets();
+    const target = targets.find(t => t.type === 'page');
+    if (!target || !target.webSocketDebuggerUrl) return { success: false, message: 'CDP 无可用页面' };
+    let cdp;
+    try { cdp = await _cdpConnect(target.webSocketDebuggerUrl); }
+    catch (e) { return { success: false, message: 'CDP 连接失败：' + e.message }; }
+    try {
+      const checkinJs = "(async () => {" +
+        "const all = Array.from(document.querySelectorAll('button,.quick-row,[role=button],a'));" +
+        "let target = null;" +
+        "for (const el of all) { const t = (el.textContent||'').trim();" +
+        "if (t.includes('每日签到') || (t.includes('签到') && t.includes('领取')) || (t.includes('领取') && t.includes('流量'))) { target = el; break; } }" +
+        "if (!target) { for (const el of all) { if ((el.textContent||'').trim().includes('签到')) { target = el; break; } } }" +
+        "if (!target) return { success: false, error: '未找到签到按钮' };" +
+        "const before = (target.textContent||'').trim();" +
+        "if (before.includes('已签') || before.includes('已领取')) return { success: true, alreadyCheckedIn: true, message: '今日已签到' };" +
+        "target.click();" +
+        "for (let i = 0; i < 20; i++) { await new Promise(r => setTimeout(r, 500)); const t = (target.textContent||'').trim();" +
+        "if (t.includes('已签') || t.includes('已领取') || t.includes('成功')) return { success: true, message: '签到成功' };" +
+        "if (t.includes('失败') || t.includes('错误')) return { success: false, error: '签到失败：' + t }; }" +
+        "return { success: true, message: '已触发签到（请稍后查看结果）' }; })()";
+      const result = await cdp.sendCommand('Runtime.evaluate', {
+        expression: checkinJs, awaitPromise: true, returnByValue: true, userGesture: true
+      }, 30000);
+      if (!result || !result.result) return { success: false, message: 'CDP 返回异常' };
+      const val = result.result.value;
+      if (val && typeof val === 'object') return val;
+      return { success: false, message: '签到脚本返回异常：' + JSON.stringify(result.result) };
+    } finally { cdp.close(); }
+  } catch (err) {
+    return { success: false, message: err.message };
   }
 });
 
@@ -2427,11 +2778,14 @@ ipcMain.handle('sign:execute-uia', async (event, {
         return { success: false, message: '强制重启失败：' + launchRes.message, results };
       }
     } else if (running) {
-      // 程序已在运行，但可能最小化到托盘（Electron 应用）。
-      // 再次执行 exe 可触发 second-instance 事件，将窗口拉到前台。
-      try { await launchExe(exePath, exeArgs); } catch (e) {}
-      await new Promise(r => setTimeout(r, 2000));
-      results.push({ step: 'launch', success: true, alreadyRunning: true, message: '程序已在运行，已尝试唤起窗口' });
+      // P0-3: 程序已在运行，跳过 launchExe 唤起和 2s 等待
+      // UIA helper（uia-checkin.exe）按 procName 找窗口，不要求窗口在前台
+      // 后续 wait 步骤对已运行实例跳过固定等待；auto 模式由 PS 脚本快速确认就绪
+      results.push({ step: 'launch', success: true, alreadyRunning: true, message: '程序已在运行，直接复用' });
+    } else if (targetProc === 'Hyperdown') {
+      // 后台签到模式：不主动启动 Hyperdown（避免弹窗打扰），要求用户已启动
+      // 和 WorkBuddy 一样：进程在运行才签到，不弹窗
+      return { success: false, message: 'Hyperdown 未运行，请先启动 Hyperdown（签到在后台完成，不弹窗）', results };
     } else {
       const launchRes = await launchExe(exePath, exeArgs);
       results.push({ step: 'launch', ...launchRes });
@@ -2441,7 +2795,11 @@ ipcMain.handle('sign:execute-uia', async (event, {
     }
 
     // --- 步骤 2：等待程序就绪 ---
-    if (waitMode === 'auto') {
+    const _uiaAlreadyRunning = results.some(r => r.step === 'launch' && r.alreadyRunning);
+    if (_uiaAlreadyRunning && waitMode !== 'auto') {
+      // P0-3: 已运行实例跳过固定等待（程序已就绪）
+      results.push({ step: 'wait', success: true, message: '已运行，跳过等待' });
+    } else if (waitMode === 'auto') {
       const waitRes = await runPowerShell(
         buildWaitReadyScript(targetProc, waitWindowTitle, waitTimeout),
         waitTimeout + 10000
