@@ -291,13 +291,6 @@ function writeData(filename, data) {
 
 // 主窗口引用（托盘恢复窗口使用）
 let mainWindow = null;
-// 自定义最大化状态（transparent 无边框窗口下 win.isMaximized/unmaximize 不可靠，
-// 改用手动标志 + 缓存正常态 bounds + setBounds 切换，见 toggleMaximized）
-let customMaximized = false;
-let normalBounds = null;
-// Aero Snap 状态：null | 'left' | 'right' | 'max'
-// 拖窗口到屏幕顶部/左/右边缘松开时触发 snap（半屏/最大化），拖出时还原 normalBounds
-let snapped = null;
 // 「关闭后继续后台运行」状态（与 data/bg-run.json 同步，close 拦截据此判断）
 let backgroundRun = false;
 // 是否正在真正退出（before-quit 置 true，放行 close 事件）
@@ -360,11 +353,18 @@ function createWindow() {
     minWidth: 860,
     minHeight: 600,
     title: '教公台-阡稻工作室',
-    // 自定义窗口外壳：去掉系统边框/标题栏，由 CSS 绘制白色边框 + 圆角 + 阴影
-    frame: false,
-    transparent: true,      // 窗口背景透明，让 CSS 控制外圈视觉
-    hasShadow: false,       // 关闭系统阴影，改用 CSS box-shadow 自绘（transparent 下系统阴影常失效）
-    maximizable: false,     // 禁用系统最大化（Win+上箭头/拖顶），改由标题栏按钮手动 setBounds 管理，避免透明窗口 isMaximized 状态机不可靠
+    // Windows 原生集成：隐藏系统标题栏但保留系统绘制的最小/最大/关闭按钮（Win10/11 风格）。
+    // 系统接管 Aero Snap（拖边缘半屏/最大化）、Win+方向键、Win11 Snap Layouts、双击最大化、任务栏缩略图。
+    // 代价：窗口本身为矩形（Win11 自动系统圆角，Win10 直角），失去 transparent 时代的"漂浮圆角阴影"美学。
+    // 这是 VSCode/Discord/Slack 的同款做法。
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: 'rgba(255, 255, 255, 0.92)',   // 按钮背景色（与 .titlebar 毛玻璃底色一致）
+      symbolColor: '#1E293B',                // 按钮图标颜色（与 --titlebar-text 一致）
+      height: 44                             // 按钮高度与 .titlebar 一致
+    },
+    backgroundColor: '#ffffff',             // 启动时避免白屏闪烁
+    autoHideMenuBar: true,                  // 隐藏菜单栏，Alt 才显示
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -386,13 +386,8 @@ function createWindow() {
     }
   });
 
-  // 窗口重建时重置手动最大化/snap 状态
-  customMaximized = false;
-  normalBounds = null;
-  snapped = null;
-
   // 限制窗口最大尺寸不超过屏幕工作区：拖拽边缘放大时不会超过屏幕/覆盖任务栏
-  // 手动最大化 toggleMaximized 用 setBounds 到 workArea（正好等于 max，不受影响）
+  // 系统最大化自动到 workArea（排除任务栏），此处限制主要防止用户手动拖拽溢出
   // F11 全屏不受 setMaximumSize 限制（fullscreen 是独立行为）
   const applyMaxSize = () => {
     try {
@@ -404,8 +399,15 @@ function createWindow() {
   screen.on('display-metrics-changed', applyMaxSize);
   win.on('closed', () => screen.off('display-metrics-changed', applyMaxSize));
 
+  // 系统原生最大化/还原事件：向渲染进程同步状态（切换 body.maximized 调整 padding/圆角）
+  // 取代原手动 customMaximized 标志，现在完全由系统驱动
+  win.on('maximize', () => {
+    if (win.webContents && !win.webContents.isDestroyed()) win.webContents.send('window:maximize-state', true);
+  });
+  win.on('unmaximize', () => {
+    if (win.webContents && !win.webContents.isDestroyed()) win.webContents.send('window:maximize-state', false);
+  });
   // 全屏（F11）走"最大化"样式：去 padding/圆角/阴影，按钮贴角，四周无间隙
-  // 最大化/还原由 IPC toggleMaximized 手动管理，不依赖系统 maximize 事件
   win.on('enter-full-screen', () => {
     if (win.webContents && !win.webContents.isDestroyed()) win.webContents.send('window:maximize-state', true);
   });
@@ -418,127 +420,22 @@ function createWindow() {
 }
 
 // ---------------------------------------------------------------------
-// 自定义标题栏窗口控制 IPC（最小/最大/关闭/查询最大化状态）
+// 窗口控制 IPC（最小/最大/关闭/查询最大化状态）
 // ---------------------------------------------------------------------
-// 🔴 透明无边框窗口（transparent:true + frame:false）在 Windows 上 win.isMaximized/
-//    win.unmaximize 状态机不可靠：setBounds 修正任务栏覆盖后状态与尺寸脱节，
-//    unmaximize 不还原原尺寸。改用手动 setBounds 切换，彻底绕开 Windows 最大化状态机。
-/** 向渲染进程同步"是否处于最大化或半屏 snap"状态（用于切换 body.maximized 去圆角/padding） */
-function sendSnapState() {
-  if (mainWindow && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
-    mainWindow.webContents.send('window:maximize-state', customMaximized || snapped !== null);
-  }
-}
-/** 还原到 snap/最大化前的正常态 bounds */
-function restoreNormal() {
-  if (!mainWindow) return;
-  const wasSnapped = customMaximized || snapped !== null;
-  if (normalBounds) mainWindow.setBounds(normalBounds);
-  customMaximized = false;
-  snapped = null;
-  if (wasSnapped) sendSnapState();
-}
-/** 最大化到工作区（排除任务栏），保留 normalBounds 供还原 */
-function applyMaximized() {
-  if (!mainWindow) return;
-  if (!customMaximized && !snapped) normalBounds = mainWindow.getBounds();
-  try {
-    const { workArea } = screen.getPrimaryDisplay();
-    mainWindow.setBounds({ x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height });
-  } catch (_) { /* 多显示器异常时退回不修正 */ }
-  customMaximized = true;
-  snapped = null;
-  sendSnapState();
-}
-/** Aero Snap 到左/右半屏（normalBounds 已由 drag-start 记录） */
-function snapToSide(side) {
-  if (!mainWindow) return;
-  try {
-    const { workArea } = screen.getPrimaryDisplay();
-    const half = Math.floor(workArea.width / 2);
-    if (side === 'left') {
-      mainWindow.setBounds({ x: workArea.x, y: workArea.y, width: half, height: workArea.height });
-    } else {
-      mainWindow.setBounds({ x: workArea.x + (workArea.width - half), y: workArea.y, width: half, height: workArea.height });
-    }
-    customMaximized = false;
-    snapped = side;
-    sendSnapState();
-  } catch (_) {}
-}
-/** 切换主窗口最大化/还原（手动 setBounds，不调 win.maximize/unmaximize） */
-function toggleMaximized() {
-  if (!mainWindow) return false;
-  if (customMaximized) {
-    restoreNormal();
-  } else {
-    applyMaximized();
-  }
-  return customMaximized;
-}
-
+// 现使用系统原生最大化（titleBarStyle:'hidden' + titleBarOverlay），win.isMaximized/
+// win.maximize/unmaximize 状态机可靠，不再需要手动 setBounds 管理。
 ipcMain.handle('window:minimize', () => { if (mainWindow) mainWindow.minimize(); });
-ipcMain.handle('window:maximize-toggle', () => toggleMaximized());
-ipcMain.handle('window:close', () => { if (mainWindow) mainWindow.close(); });
-ipcMain.handle('window:is-maximized', () => customMaximized);
-// 标题栏手动拖拽：渲染进程发来屏幕坐标增量，主进程移动窗口
-// 🔴 transparent 无边框窗口下 setBounds 后 Windows DWM 会把尺寸 round up（实测每次 +1px），
-//    若每次用 getBounds() 的尺寸做下次基准会累积放大（窗口越拖越大）。
-//    解决：拖拽期间锁定首次尺寸，全程复用固定值，拖拽停顿 300ms 后释放锁。
-let dragFixedSize = null;
-let dragFixedTimer = null;
-ipcMain.on('window:drag-move', (event, dx, dy) => {
-  if (!mainWindow || customMaximized || snapped) return; // snap/最大化时不允许拖拽（drag-start 会先还原）
-  try {
-    const b = mainWindow.getBounds();
-    if (!dragFixedSize) dragFixedSize = { w: b.width, h: b.height };
-    mainWindow.setBounds({ x: b.x + dx, y: b.y + dy, width: dragFixedSize.w, height: dragFixedSize.h });
-    clearTimeout(dragFixedTimer);
-    dragFixedTimer = setTimeout(() => { dragFixedSize = null; }, 300);
-  } catch (_) {}
-});
-
-// Aero Snap：拖拽开始/结束
-// drag-start：若处于 snap/最大化状态，先还原到正常尺寸并让窗口跟随鼠标（从最大化/半屏拖出时缩小跟随）；
-//             否则记录当前 bounds 为拖拽前位置，供 snap 后还原。
-ipcMain.handle('window:drag-start', (event, mx, my) => {
-  if (!mainWindow) return;
-  if (customMaximized || snapped) {
-    if (normalBounds) {
-      // 窗口缩小到正常尺寸，水平居中于鼠标、顶部贴近鼠标（模拟 Windows 从最大化拖出跟随手势）
-      mainWindow.setBounds({
-        x: mx - Math.floor(normalBounds.width / 2),
-        y: my - 8,
-        width: normalBounds.width,
-        height: normalBounds.height
-      });
-    }
-    customMaximized = false;
-    snapped = null;
-    sendSnapState();
-    // normalBounds 保留，拖拽中若再次 snap 仍还原到此处
-  } else {
-    normalBounds = mainWindow.getBounds();
+ipcMain.handle('window:maximize-toggle', () => {
+  if (!mainWindow) return false;
+  if (mainWindow.isMaximized()) {
+    mainWindow.unmaximize();
+    return false;
   }
+  mainWindow.maximize();
+  return true;
 });
-// drag-end：检测窗口是否拖到屏幕顶部/左/右边缘，触发 Aero Snap；否则更新 normalBounds 为新正常态
-ipcMain.on('window:drag-end', (event, didMove) => {
-  if (!mainWindow || !didMove) return;
-  try {
-    const b = mainWindow.getBounds();
-    const { workArea } = screen.getPrimaryDisplay();
-    const EDGE = 8; // 距边缘阈值（px）
-    if (b.x <= workArea.x + EDGE) {
-      snapToSide('left');
-    } else if (b.x + b.width >= workArea.x + workArea.width - EDGE) {
-      snapToSide('right');
-    } else if (b.y <= workArea.y + EDGE) {
-      applyMaximized();
-    } else {
-      normalBounds = b; // 未 snap，更新正常态位置
-    }
-  } catch (_) {}
-});
+ipcMain.handle('window:close', () => { if (mainWindow) mainWindow.close(); });
+ipcMain.handle('window:is-maximized', () => mainWindow ? mainWindow.isMaximized() : false);
 
 // ---------------------------------------------------------------------
 // 抖音 / 千问 窗口与后台自动化

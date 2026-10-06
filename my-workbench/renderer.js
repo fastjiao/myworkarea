@@ -530,72 +530,12 @@ function initParticles() {
  *   6. 默认进入首页
  */
 // ---------------------------------------------------------------------
-// 自定义标题栏窗口控制：最小/最大/关闭 + 最大化状态同步
-// frame:false 后由渲染进程负责按钮交互，通过 IPC 调主进程
+// 标题栏窗口控制：系统原生按钮 + 最大化状态同步
+// titleBarStyle:'hidden' + titleBarOverlay 后，最小/最大/关闭按钮由系统绘制，
+// 拖拽/Aero Snap/双击最大化/Win+方向键全部由系统接管，渲染进程无需手动实现。
+// 此处仅同步最大化状态以切换 body.maximized（调整 padding/圆角）。
 // ---------------------------------------------------------------------
 function initWindowControls() {
-  const minBtn = document.getElementById('win-minimize');
-  const maxBtn = document.getElementById('win-maximize');
-  const closeBtn = document.getElementById('win-close');
-  if (!minBtn || !maxBtn || !closeBtn) return;
-
-  // 最小化
-  minBtn.addEventListener('click', () => window.workbench.windowMinimize());
-
-  // 最大化/还原（点击切换）
-  maxBtn.addEventListener('click', async () => {
-    await window.workbench.windowMaximizeToggle();
-  });
-
-  // 关闭（受「关闭后继续后台运行」规则约束，主进程会决定是隐藏还是退出）
-  closeBtn.addEventListener('click', () => window.workbench.windowClose());
-
-  // 标题栏：手动拖拽移动窗口 + 双击切换最大化
-  // 🔴 .titlebar 设为 no-drag（drag 区会吞 mousedown 事件），手动实现拖拽 + 双击检测
-  let dragState = null; // { lastMx, lastMy, moved }
-  let lastDown = { time: 0, x: 0, y: 0 };
-  const titlebar = document.querySelector('.titlebar');
-  if (titlebar) {
-    titlebar.addEventListener('mousedown', async (e) => {
-      if (e.button !== 0) return; // 只处理左键
-      if (e.target.closest('.titlebar-btn')) return; // 排除按钮区域
-      e.preventDefault(); // 阻止双击选词/拖拽默认行为，避免选中文字
-      const now = Date.now();
-      // 双击检测：两次 mousedown 间隔<450ms 且位移<6px
-      if (now - lastDown.time < 450 &&
-          Math.abs(e.clientX - lastDown.x) < 6 &&
-          Math.abs(e.clientY - lastDown.y) < 6) {
-        window.workbench.windowMaximizeToggle();
-        lastDown.time = 0;
-        dragState = null;
-        return;
-      }
-      lastDown = { time: now, x: e.clientX, y: e.clientY };
-      // 通知主进程拖拽开始：若处于 snap/最大化状态先还原并跟随鼠标，否则记录拖拽前位置
-      await window.workbench.windowDragStart(e.screenX, e.screenY);
-      // 开始拖拽（moved 标记是否真的移动过，mouseup 时据此决定是否重置 lastDown / 触发 snap）
-      dragState = { lastMx: e.screenX, lastMy: e.screenY, moved: false };
-    });
-    window.addEventListener('mousemove', (e) => {
-      if (!dragState) return;
-      const dx = e.screenX - dragState.lastMx;
-      const dy = e.screenY - dragState.lastMy;
-      if (dx !== 0 || dy !== 0) {
-        dragState.moved = true;
-        dragState.lastMx = e.screenX;
-        dragState.lastMy = e.screenY;
-        window.workbench.windowDragMove(dx, dy);
-      }
-    });
-    window.addEventListener('mouseup', () => {
-      if (dragState && dragState.moved) {
-        lastDown.time = 0; // 拖拽过则重置，避免下次 mousedown 误判双击
-        window.workbench.windowDragEnd(true); // 检测 Aero Snap（顶部/左/右边缘）
-      }
-      dragState = null;
-    });
-  }
-
   // 同步初始最大化状态（启动时可能已是最大化）
   window.workbench.windowIsMaximized().then((isMax) => {
     document.body.classList.toggle('maximized', !!isMax);

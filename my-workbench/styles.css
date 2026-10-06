@@ -121,66 +121,54 @@ body {
 
 body {
   font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
-  background: transparent; /* 窗口透明（transparent:true），由 .window-shell 提供白底/圆角/阴影 */
+  background: var(--bg); /* 窗口不透明，由系统提供边框/阴影/圆角（Win11 系统圆角） */
   color: var(--text);
   overflow: hidden;
-  padding: 8px; /* 给外圈白色边框与阴影留出空间 */
-  transition: padding 0.18s ease; /* 最大化/还原时外边距平滑过渡 */
 }
 
-/* 最大化时取消外边距，让 .window-shell 填满工作区 */
-body.maximized {
-  padding: 0;
-}
+/* 最大化时系统自动填满工作区，无需额外样式（保留类名供渲染进程切换，预留未来调整） */
+/* body.maximized { */
+  /* 系统接管，无需手动调整 */
+/* } */
 
 /* ---------------------------------------------------------------------
-   自定义窗口外壳：白色边框 + 圆角 + 阴影
-   frame:false + transparent:true 后，由该容器承担原系统边框的视觉角色
+   窗口外壳容器
+   titleBarStyle:'hidden' 后窗口本身有系统边框/阴影/圆角（Win11），
+   .window-shell 仅作为内部布局容器，不再承担自绘边框角色。
    --------------------------------------------------------------------- */
 .window-shell {
   position: relative;
   z-index: 1;
   display: flex;
   flex-direction: column;
-  height: 100%; /* 填满 body 内容区（body 已留 padding 8px） */
+  height: 100%;
   background: var(--bg);
-  border-radius: 10px;
-  overflow: hidden; /* 裁剪内部 .tech-backdrop / .app-layout 到圆角内 */
-  box-shadow: 0 0 0 1px var(--window-border), var(--window-shadow);
-  transition: border-radius 0.18s ease, box-shadow 0.18s ease; /* 最大化/还原时圆角↔直角、阴影↔无阴影平滑过渡 */
+  overflow: hidden;
 }
 
-/* 最大化时取消圆角与阴影（窗口已填满工作区，无需装饰） */
-body.maximized .window-shell {
-  border-radius: 0;
-  box-shadow: none;
-}
-
-/* 最大化/全屏时标题栏右贴边，让关闭按钮落在屏幕右上角（Windows 标准）
-   正常模式保留 padding-right:8px 让按钮避开圆角；最大化无圆角，贴边 */
-body.maximized .titlebar {
-  padding-right: 0;
-}
+/* 最大化时系统自动处理，无需手动调整圆角/阴影 */
 
 /* 自定义标题栏：毛玻璃叠加在内容之上，与主内容区融为一体（EchoMusic 风格）
-   半透明 + backdrop-blur：内容滚动到标题栏下方时被模糊，不遮挡顶部按钮 */
+   半透明 + backdrop-blur：内容滚动到标题栏下方时被模糊，不遮挡顶部按钮
+   -webkit-app-region: drag：系统接管拖拽/Aero Snap/双击最大化
+   right: 140px：避让系统绘制的最小/最大/关闭按钮（3 按钮 × ~46px） */
 .titlebar {
   position: absolute;
   top: 0;
   left: 210px; /* 只覆盖主内容区顶部，不覆盖侧边栏（让侧边栏内容可向上移到顶部） */
-  right: 0;
+  right: 140px; /* 避让系统标题栏按钮 */
   height: 44px;
   padding: 0 8px 0 14px;
   background: var(--titlebar-bg); /* 半透明毛玻璃，内容滚到下方时模糊不穿透 */
   backdrop-filter: blur(20px) saturate(150%);
   -webkit-backdrop-filter: blur(20px) saturate(150%);
-  -webkit-app-region: no-drag; /* 手动拖拽+双击检测（drag 区会吞 mousedown 事件，无法检测手势） */
+  -webkit-app-region: drag; /* 系统接管拖拽 + 双击最大化 + Aero Snap */
   user-select: none; /* 禁止双击选中标题栏文字 */
   z-index: 20;
   display: flex;
   align-items: center;
   justify-content: flex-end; /* 按钮靠右，左侧留空给侧边栏品牌 */
-  transition: left 0.2s ease, padding 0.18s ease; /* 与侧边栏收起/展开动画同步 + 最大化时 padding-right 平滑过渡 */
+  transition: left 0.2s ease; /* 与侧边栏收起/展开动画同步 */
 }
 
 /* 标题文字隐藏（EchoMusic 风格：标题栏不显示标题，品牌在侧边栏） */
@@ -188,12 +176,14 @@ body.maximized .titlebar {
   display: none;
 }
 
-/* 网易云顶栏容器：嵌入标题栏内部，占据按钮左侧全部空间，不增加标题栏高度 */
+/* 网易云顶栏容器：嵌入标题栏内部，占据按钮左侧全部空间，不增加标题栏高度
+   no-drag：内部有搜索框/菜单等交互组件，不能被系统拖拽吞掉点击 */
 .netease-titlebar-content {
   flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
+  -webkit-app-region: no-drag;
 }
 .netease-titlebar-content[hidden] {
   display: none;
@@ -229,59 +219,6 @@ body.maximized .titlebar {
 }
 .netease-titlebar-content .netease-topbar-menu {
   padding: 4px 10px;
-}
-
-.titlebar-buttons {
-  display: flex;
-  -webkit-app-region: no-drag; /* 按钮区域可点击，不触发拖拽 */
-}
-
-/* Windows 风格三按钮：最小化 ─ / 最大化 □ / 关闭 ✕ */
-.titlebar-btn {
-  width: 46px;
-  height: 44px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--titlebar-text);
-  transition: background 0.15s, color 0.15s;
-}
-
-.titlebar-btn:hover {
-  background: rgba(127, 127, 127, 0.18);
-}
-
-/* 最小化图标：一条横线 */
-#win-minimize::before {
-  content: '';
-  width: 10px;
-  height: 1px;
-  background: currentColor;
-}
-
-/* 最大化图标：方框 */
-#win-maximize::before {
-  content: '';
-  width: 10px;
-  height: 10px;
-  border: 1px solid currentColor;
-  box-sizing: border-box;
-}
-
-/* 关闭图标：✕ */
-#win-close::before {
-  content: '✕';
-  font-size: 12px;
-  line-height: 1;
-}
-
-/* 关闭按钮悬停：Windows 经典红色 */
-.titlebar-close:hover {
-  background: #E81123;
-  color: #fff;
 }
 
 /* ---------------------------------------------------------------------
@@ -382,6 +319,7 @@ body.maximized .titlebar {
   color: #1E293B;
   padding: 0 16px 24px;
   white-space: nowrap;
+  -webkit-app-region: drag; /* 侧边栏顶部作为窗口拖拽区（标题栏不覆盖侧边栏） */
   /* 品牌发光已移除：原 text-shadow 浅蓝光晕在文字下方扩散成白色底纹 */
 }
 
@@ -408,6 +346,7 @@ body.maximized .titlebar {
   cursor: pointer;
   opacity: 0.7;
   transition: background 0.15s, opacity 0.15s;
+  -webkit-app-region: no-drag; /* 按钮可点击，不触发拖拽 */
 }
 
 .sidebar-toggle:hover {

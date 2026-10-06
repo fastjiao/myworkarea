@@ -281,7 +281,10 @@ contextBridge.exposeInMainWorld('workbench', {
   /** 【拾取器页面内部用】取消拾取 */
   _pickerCancel: () => ipcRenderer.send('picker:cancel'),
 
-  // ======================== 自定义标题栏窗口控制 ========================
+  // ======================== 标题栏窗口控制 ========================
+  // 现使用系统原生 titleBarOverlay 按钮，拖拽/Aero Snap/双击最大化由系统接管。
+  // 此处仅保留最大化状态查询/订阅（用于渲染进程切换 body.maximized 样式），
+  // 以及最小/最大/关闭的 IPC 调用（供侧边栏/快捷键等非标题栏入口使用）。
 
   /** 最小化主窗口 */
   windowMinimize: () => ipcRenderer.invoke('window:minimize'),
@@ -292,12 +295,5 @@ contextBridge.exposeInMainWorld('workbench', {
   /** 查询当前是否处于最大化状态 */
   windowIsMaximized: () => ipcRenderer.invoke('window:is-maximized'),
   /** 订阅主窗口最大化/还原事件（用于切换 body.maximized 样式） */
-  onWindowMaximizeState: (callback) => ipcRenderer.on('window:maximize-state', (event, isMax) => callback(isMax)),
-
-  /** 拖拽移动窗口（标题栏手动拖拽，dx/dy 为屏幕坐标增量） */
-  windowDragMove: (dx, dy) => ipcRenderer.send('window:drag-move', dx, dy),
-  /** 拖拽开始：若处于 snap/最大化状态先还原并跟随鼠标，否则记录拖拽前位置（Aero Snap 前置） */
-  windowDragStart: (mx, my) => ipcRenderer.invoke('window:drag-start', mx, my),
-  /** 拖拽结束：检测窗口是否拖到屏幕顶部/左/右边缘触发 Aero Snap */
-  windowDragEnd: (didMove) => ipcRenderer.send('window:drag-end', didMove)
+  onWindowMaximizeState: (callback) => ipcRenderer.on('window:maximize-state', (event, isMax) => callback(isMax))
 });
