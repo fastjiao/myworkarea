@@ -200,6 +200,32 @@ contextBridge.exposeInMainWorld('workbench', {
    */
   fetchSignCookieWps: () => ipcRenderer.invoke('sign:fetch-cookie-wps'),
 
+  /**
+   * 读取定时自动签到配置
+   * @returns {Promise<{enabled: boolean, time: string}>}
+   */
+  getSignSchedule: () => ipcRenderer.invoke('sign:schedule-get'),
+
+  /**
+   * 保存定时自动签到配置（主进程会立即刷新调度器）
+   * @param {{enabled: boolean, time: string}} conf time 为 HH:MM 24 小时制
+   * @returns {Promise<{success: boolean, value?: {enabled: boolean, time: string}}>}
+   */
+  setSignSchedule: (conf) => ipcRenderer.invoke('sign:schedule-set', conf),
+
+  /**
+   * 按程序名自动定位 exe 路径（跨电脑迁移：任务里记录的路径不存在时兜底查找）
+   * @param {{procName: string, exePath?: string}} params
+   * @returns {Promise<{found: boolean, path: string}>}
+   */
+  resolveExe: (params) => ipcRenderer.invoke('sign:resolve-exe', params),
+
+  /**
+   * 订阅主进程定时签到触发（到点时主进程通知渲染进程执行 Sign._signAll）
+   * @param {() => void} callback
+   */
+  onSignAutoTrigger: (callback) => ipcRenderer.on('sign:auto-trigger', () => callback()),
+
   // ======================== 网易云音乐 ========================
 
   /**
@@ -292,6 +318,12 @@ contextBridge.exposeInMainWorld('workbench', {
   windowClose: () => ipcRenderer.invoke('window:close'),
   /** 查询当前是否处于最大化状态 */
   windowIsMaximized: () => ipcRenderer.invoke('window:is-maximized'),
+  /**
+   * 同步系统标题栏按钮配色到指定主题（切换明暗时调用）
+   * @param {'light'|'dark'} resolved 已解析的实际主题
+   * @returns {Promise<{success: boolean}>}
+   */
+  setTitlebarTheme: (resolved) => ipcRenderer.invoke('window:set-titlebar-theme', resolved),
   /** 订阅主窗口最大化/还原事件（用于切换 body.maximized 样式） */
   onWindowMaximizeState: (callback) => ipcRenderer.on('window:maximize-state', (event, isMax) => callback(isMax))
 });

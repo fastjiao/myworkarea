@@ -77,7 +77,8 @@
     - [x] https://www.zcool.com.cn/
     - [x] https://www.reactbits.dev/get-started/index
 
-
+### 用户常驻计划
+- 定时触发自动签到
 
 
 

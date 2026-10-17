@@ -16,6 +16,14 @@ window.Sign = {
     } catch (e) {
       this._tasks = [];
     }
+    // 监听主进程定时触发：到点自动执行所有未签任务（配置在设置弹窗里）
+    if (window.workbench.onSignAutoTrigger) {
+      window.workbench.onSignAutoTrigger(() => {
+        console.log('[签到] 收到定时触发，开始执行全部未签任务');
+        UI.setToast('定时签到启动', 'info');
+        this._signAll();
+      });
+    }
     Store.onChange(() => this.render());
     this.render();
   },
@@ -40,7 +48,7 @@ window.Sign = {
     section.appendChild(title);
 
     section.appendChild(UI.el('div', 'sf-desc',
-      '网页自动签到：一键登录后，程序会自动向签到接口发送请求完成签到'
+      '选要签到的程序，登录一次后每天自动签到'
     ));
 
     if (this._tasks.length > 0) {
@@ -340,7 +348,6 @@ window.Sign = {
 
   _openFormModal(task) {
     const editing = !!task;
-    const isWps = task?.taskType === 'wps';
     const form = UI.el('form', '');
 
     // 所有输入控件引用统一声明在函数顶层作用域，避免块级作用域访问不到
@@ -352,22 +359,35 @@ window.Sign = {
     let exePathInput, procNameInput, closeAfterCheckbox, uiaItem;
     let btnKwInput, doneKwInput, successKwInput, navNameInput;
 
-    // ---- 站点模板选择 ----
+    // ---- 选择要签到的程序 ----
     const tplItem = UI.el('div', 'form-item');
-    tplItem.appendChild(UI.el('label', '', '站点类型'));
+    tplItem.appendChild(UI.el('label', '', '选择程序'));
     const templateSelect = document.createElement('select');
-    const optCustom = UI.el('option', '', '自定义（通用 HTTP 接口）');
-    optCustom.value = 'custom';
     const optWps = UI.el('option', '', 'WPS 每日签到');
     optWps.value = 'wps';
-    const optUia = UI.el('option', '', '桌面应用（UIA 自动签到，不碰鼠标）');
-    optUia.value = 'uia';
-    templateSelect.appendChild(optCustom);
+    const optHyperdown = UI.el('option', '', 'Hyperdown 签到');
+    optHyperdown.value = 'hyperdown';
+    const optWorkbuddy = UI.el('option', '', 'WorkBuddy 领积分');
+    optWorkbuddy.value = 'workbuddy';
+    const optCustom = UI.el('option', '', '高级：自定义接口');
+    optCustom.value = 'custom';
     templateSelect.appendChild(optWps);
-    templateSelect.appendChild(optUia);
-    templateSelect.value = isWps ? 'wps' : (task?.taskType === 'uia' ? 'uia' : 'custom');
+    templateSelect.appendChild(optHyperdown);
+    templateSelect.appendChild(optWorkbuddy);
+    templateSelect.appendChild(optCustom);
+    // 回填：编辑已有任务时根据 taskType / procName 选对应预设
+    let initTpl = 'wps';
+    if (task?.taskType === 'uia') {
+      const pn = (task.procName || '').toLowerCase();
+      initTpl = pn === 'hyperdown' ? 'hyperdown' : (pn.indexOf('workbuddy') >= 0 ? 'workbuddy' : 'hyperdown');
+    } else if (task?.taskType === 'workbuddy') {
+      initTpl = 'workbuddy';
+    } else if (task?.taskType === 'web') {
+      initTpl = 'custom';
+    }
+    templateSelect.value = initTpl;
     tplItem.appendChild(templateSelect);
-    tplItem.appendChild(UI.el('div', 'sf-api-note', '选「桌面应用」通过 Windows UIA 程序化触发签到按钮，不碰鼠标；选「WPS」只需登录即可；选「自定义」需手动填写接口地址。'));
+    tplItem.appendChild(UI.el('div', 'sf-api-note', '选你想签到的程序'));
     form.appendChild(tplItem);
 
     // ---- 任务名称 ----
@@ -389,14 +409,32 @@ window.Sign = {
     urlItem.appendChild(UI.el('div', 'sf-api-note', '就是点「签到」时后台请求的那个网址，一般和网站域名相同。'));
     form.appendChild(urlItem);
 
-    // ---- 桌面应用路径（UIA 模式才显示） ----
+    // ---- 程序位置（仅 Hyperdown 显示） ----
     uiaItem = UI.el('div', 'form-item');
-    uiaItem.appendChild(UI.el('label', '', '目标程序路径'));
+    uiaItem.appendChild(UI.el('label', '', '程序位置'));
     const exeRow = UI.el('div', 'sign-cookie-row');
     exePathInput = UI.el('input', '');
-    exePathInput.placeholder = 'D:\\DDL\\Hyperdown\\Hyperdown.exe';
+    exePathInput.placeholder = '点右边按钮选择';
     exePathInput.value = task?.exePath || '';
     exePathInput.style.flex = '1';
+    const autoFindBtn = UI.el('button', 'btn btn-ghost', '自动查找');
+    autoFindBtn.type = 'button';
+    autoFindBtn.addEventListener('click', async () => {
+      autoFindBtn.disabled = true;
+      autoFindBtn.textContent = '查找中…';
+      try {
+        const r = await window.workbench.resolveExe({ procName: 'Hyperdown', exePath: exePathInput.value.trim() });
+        if (r && r.found) {
+          exePathInput.value = r.path;
+          UI.setToast('已找到 Hyperdown', 'success');
+        } else {
+          UI.setToast('没找到，请点「浏览」手动选', 'info');
+        }
+      } finally {
+        autoFindBtn.disabled = false;
+        autoFindBtn.textContent = '自动查找';
+      }
+    });
     const browseBtn = UI.el('button', 'btn btn-ghost', '浏览…');
     browseBtn.type = 'button';
     browseBtn.addEventListener('click', async () => {
@@ -404,9 +442,10 @@ window.Sign = {
       if (res && !res.canceled && res.path) exePathInput.value = res.path;
     });
     exeRow.appendChild(exePathInput);
+    exeRow.appendChild(autoFindBtn);
     exeRow.appendChild(browseBtn);
     uiaItem.appendChild(exeRow);
-    uiaItem.appendChild(UI.el('div', 'sf-api-note', '签到时若程序未运行会自动启动，已运行则直接触发签到按钮。'));
+    uiaItem.appendChild(UI.el('div', 'sf-api-note', '不知道装在哪就点「自动查找」'));
 
     const procItem = UI.el('div', 'form-item');
     procItem.appendChild(UI.el('label', '', '进程名（可选，不填自动从路径推导）'));
@@ -480,7 +519,7 @@ window.Sign = {
     cookieRow.appendChild(loginBtn);
     cookieRow.appendChild(cookieStatus);
     cookieItem.appendChild(cookieRow);
-    cookieItem.appendChild(UI.el('div', 'sf-api-note', '点「一键登录」→ 在弹出的网页中登录 → 关掉窗口，程序会自动抓取登录状态。'));
+    cookieItem.appendChild(UI.el('div', 'sf-api-note', '点这里登录一次，关掉窗口就行'));
     form.appendChild(cookieItem);
 
     // ---- 高级设置（折叠，一般不用改；WPS 模式下隐藏） ----
@@ -581,17 +620,23 @@ window.Sign = {
     ruleSelect.addEventListener('change', applyRule);
     applyRule();
 
-    // 切换模板：WPS 模式隐藏 URL 和高级设置，自动填充名称
+    // 切换模板：按所选程序显隐对应字段
     const applyTemplate = () => {
       const tpl = templateSelect.value;
       const wps = tpl === 'wps';
-      const uia = tpl === 'uia';
-      urlItem.style.display = (wps || uia) ? 'none' : '';
-      advanced.style.display = (wps || uia) ? 'none' : '';
-      uiaItem.style.display = uia ? '' : 'none';
-      cookieItem.style.display = uia ? 'none' : '';
+      const hyperdown = tpl === 'hyperdown';
+      const workbuddy = tpl === 'workbuddy';
+      const custom = tpl === 'custom';
+      const needPath = hyperdown;          // 仅 Hyperdown 需要选程序位置
+      const needLogin = wps || custom;     // WPS 和自定义需要登录
+      urlItem.style.display = custom ? '' : 'none';
+      advanced.style.display = custom ? '' : 'none';
+      uiaItem.style.display = needPath ? '' : 'none';
+      cookieItem.style.display = needLogin ? '' : 'none';
       if (wps && !nameInput.value.trim()) nameInput.value = 'WPS';
-      if (uia && !nameInput.value.trim()) nameInput.value = 'Hyperdown 签到';
+      if (hyperdown && !nameInput.value.trim()) nameInput.value = 'Hyperdown 签到';
+      if (hyperdown && !procNameInput.value.trim()) procNameInput.value = 'Hyperdown';
+      if (workbuddy && !nameInput.value.trim()) nameInput.value = 'WorkBuddy 领积分';
     };
     templateSelect.addEventListener('change', applyTemplate);
     applyTemplate();
@@ -663,24 +708,33 @@ window.Sign = {
       if (!name) { UI.setToast('请填写任务名称', 'error'); return; }
 
       const tpl = templateSelect.value;
-      const uia = tpl === 'uia';
+      const needLogin = tpl === 'wps' || tpl === 'custom';
       const cookie = cookieInput.value.trim();
-      if (!uia && !cookie) { UI.setToast('请先点「一键登录」获取登录状态', 'error'); return; }
+      if (needLogin && !cookie) { UI.setToast('请先点「一键登录」', 'error'); return; }
 
       UI.setBtnLoading(saveBtn, true, '保存中…');
       try {
-        const wps = tpl === 'wps';
         let data;
 
-        if (uia) {
-          // UIA 桌面应用签到：只需名称 + 程序路径
-          const exePath = exePathInput.value.trim();
-          if (!exePath) { UI.setToast('请填写目标程序路径', 'error'); return; }
+        if (tpl === 'hyperdown') {
+          // Hyperdown 签到：需要程序位置
+          let exePath = exePathInput.value.trim();
+          if (!exePath) {
+            // 路径空：尝试自动定位
+            const r = await window.workbench.resolveExe({ procName: 'Hyperdown' });
+            if (r && r.found) {
+              exePath = r.path;
+              exePathInput.value = r.path;
+            } else {
+              UI.setToast('请点「浏览」或「自动查找」选择位置', 'error');
+              return;
+            }
+          }
           data = {
             taskType: 'uia',
             name,
             exePath,
-            procName: procNameInput.value.trim(),
+            procName: 'Hyperdown',
             exeArgs: task?.exeArgs || [],
             forceRelaunch: task?.forceRelaunch || false,
             closeAfterSign: closeAfterCheckbox.checked,
@@ -689,11 +743,14 @@ window.Sign = {
             successKeywords: successKwInput.value.trim(),
             navName: navNameInput.value.trim()
           };
-        } else if (wps) {
-          // WPS 专用签到：只需名称 + Cookie
+        } else if (tpl === 'workbuddy') {
+          // WorkBuddy 领积分：不需要路径/登录
+          data = { taskType: 'workbuddy', name, procName: 'WorkBuddy' };
+        } else if (tpl === 'wps') {
+          // WPS 每日签到：只需名称 + Cookie
           data = { taskType: 'wps', name, cookie };
         } else {
-          // 自定义 HTTP 接口签到
+          // 高级：自定义 HTTP 接口签到
           const url = urlInput.value.trim();
           if (!url) { UI.setToast('请填写签到接口地址', 'error'); return; }
           if (!/^https?:\/\//i.test(url)) { UI.setToast('网址需以 http:// 或 https:// 开头', 'error'); return; }

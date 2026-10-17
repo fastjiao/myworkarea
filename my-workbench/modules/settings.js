@@ -124,16 +124,44 @@ window.SettingsWidget = {
     bgRow.appendChild(bgSwitch);
     panel.appendChild(bgRow);
 
-    // 统一读取两项当前状态
+    // ---- 每天自动签到 ----
+    const schRow = UI.el('div', 'settings-row');
+    const schText = UI.el('div', 'settings-row-text');
+    schText.appendChild(UI.el('div', 'settings-row-title', '每天自动签到'));
+    schText.appendChild(UI.el('div', 'settings-row-desc', '到点自动执行所有未签任务'));
+    const schCtrl = UI.el('div', 'settings-row-ctrl');
+    const schTime = UI.el('input', 'settings-time-input');
+    schTime.type = 'time';
+    schTime.value = '09:00';
+    const schSwitch = UI.el('label', 'toggle-switch');
+    schSwitch.title = '每天自动签到';
+    const schCheckbox = document.createElement('input');
+    schCheckbox.type = 'checkbox';
+    schCheckbox.setAttribute('aria-label', '每天自动签到');
+    schSwitch.appendChild(schCheckbox);
+    schSwitch.appendChild(UI.el('span', 'toggle-slider'));
+    schCtrl.appendChild(schTime);
+    schCtrl.appendChild(schSwitch);
+    schRow.appendChild(schText);
+    schRow.appendChild(schCtrl);
+    panel.appendChild(schRow);
+
+    // 统一读取三项当前状态（自启动 / 后台运行 / 定时签到）
     Promise.all([
       window.workbench.getAutoStart(),
-      window.workbench.getBackgroundRun()
-    ]).then(([autoOn, bgOn]) => {
+      window.workbench.getBackgroundRun(),
+      window.workbench.getSignSchedule()
+    ]).then(([autoOn, bgOn, sch]) => {
       autoCheckbox.checked = !!autoOn;
       bgCheckbox.checked = !!bgOn;
+      schCheckbox.checked = !!(sch && sch.enabled);
+      schTime.value = (sch && sch.time) || '09:00';
+      schTime.disabled = !schCheckbox.checked;
     }).catch(() => {
       autoCheckbox.checked = false;
       bgCheckbox.checked = false;
+      schCheckbox.checked = false;
+      schTime.disabled = true;
     });
 
     autoCheckbox.addEventListener('change', async () => {
@@ -163,6 +191,21 @@ window.SettingsWidget = {
         UI.setToast('设置失败：' + e.message, 'error');
       }
     });
+
+    const applySchedule = async () => {
+      const conf = { enabled: schCheckbox.checked, time: schTime.value || '09:00' };
+      schTime.disabled = !conf.enabled;
+      try {
+        const res = await window.workbench.setSignSchedule(conf);
+        if (res && res.success) {
+          UI.setToast(conf.enabled ? '已开启每天 ' + conf.time + ' 自动签到' : '已关闭定时签到', 'success');
+        }
+      } catch (e) {
+        UI.setToast('设置失败：' + e.message, 'error');
+      }
+    };
+    schCheckbox.addEventListener('change', applySchedule);
+    schTime.addEventListener('change', applySchedule);
   },
 
   // 网易云音乐分区：打卡目标数量（持久化到 netease-data.json）

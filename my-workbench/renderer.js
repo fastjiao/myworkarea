@@ -295,15 +295,24 @@ function resolveTheme(mode) {
  */
 function applyTheme(theme) {
   const mode = theme || 'system';
-  document.body.dataset.theme = resolveTheme(mode);
+  const resolved = resolveTheme(mode);
+  document.body.dataset.theme = resolved;
   Store.settings.theme = mode;
   Store.saveSettings();
+  // 同步系统标题栏按钮（最小/最大/关闭）配色，避免暗色主题下按钮区突兀
+  if (window.workbench && window.workbench.setTitlebarTheme) {
+    window.workbench.setTitlebarTheme(resolved);
+  }
 }
 
 // 系统明暗变化时，若当前为"跟随系统"则自动切换
 _sysDarkMq.addEventListener('change', () => {
   if ((Store.settings.theme || 'system') === 'system') {
-    document.body.dataset.theme = resolveTheme('system');
+    const resolved = resolveTheme('system');
+    document.body.dataset.theme = resolved;
+    if (window.workbench && window.workbench.setTitlebarTheme) {
+      window.workbench.setTitlebarTheme(resolved);
+    }
   }
 });
 

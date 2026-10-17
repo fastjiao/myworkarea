@@ -1,10 +1,13 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, session, screen, Menu, net, Tray, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, session, screen, Menu, net, Tray, nativeImage, nativeTheme } = require('electron');
 const { exec, fork } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
+// 定时签到调度器（node-schedule 已在 dependencies；加载失败时降级为不调度，不影响其余功能）
+let scheduleLib = null;
+try { scheduleLib = require('node-schedule'); } catch (e) { console.warn('[签到调度] node-schedule 加载失败，定时签到不可用:', e.message); }
 
 // 常量定义
 
@@ -30,7 +33,7 @@ if (app.isPackaged) {
 }
 
 // 允许读写的数据文件白名单（防止渲染进程通过文件名参数访问任意文件）
-const ALLOWED_FILES = ['apps.json', 'events.json', 'settings.json', 'sign-tasks.json', 'bg-run.json', 'netease-cookie.json', 'netease-data.json'];
+const ALLOWED_FILES = ['apps.json', 'events.json', 'settings.json', 'sign-tasks.json', 'bg-run.json', 'sign-schedule.json', 'netease-cookie.json', 'netease-data.json'];
 
 // 每个数据文件对应的默认值（文件不存在或损坏时使用）
 const DEFAULT_VALUES = {
@@ -40,6 +43,8 @@ const DEFAULT_VALUES = {
   'sign-tasks.json': [],
   // 「关闭后继续后台运行」独立文件（主进程持有，避免与渲染进程的 settings.json 互相覆盖）
   'bg-run.json': { enabled: false },
+  // 定时自动签到配置：enabled=是否开启，time=每天触发时间（HH:MM，24 小时制）
+  'sign-schedule.json': { enabled: false, time: '09:00' },
   // 网易云登录 cookie 持久化（扫码一次后下次免扫码）
   'netease-cookie.json': { cookie: '' },
   // 网易云用户信息 + 播放列表本地缓存（实现已登录用户秒开，避免每次进页面都走扫码/网络请求）
@@ -271,6 +276,26 @@ function writeData(filename, data) {
 
 // 主窗口引用（托盘恢复窗口使用）
 let mainWindow = null;
+
+// 系统标题栏按钮（最小/最大/关闭）配色：跟随应用主题，避免暗色主题下按钮区突兀
+// 与 styles.css 的 --titlebar-bg / --titlebar-text 两套主题值保持一致
+const TITLEBAR_COLORS = {
+  light: { color: 'rgba(255, 255, 255, 0.92)', symbolColor: '#1E293B' },
+  dark:  { color: 'rgba(30, 38, 57, 0.92)',   symbolColor: '#E8EDF8' }
+};
+
+/** 把主题模式解析为 light/dark（system 模式跟 OS） */
+function resolveThemeForTitlebar(mode) {
+  if (mode === 'system' || !mode) return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+  return mode === 'dark' ? 'dark' : 'light';
+}
+
+/** 把指定 resolved 主题应用到系统标题栏按钮区 */
+function applyTitlebarTheme(resolved) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const c = TITLEBAR_COLORS[resolved === 'dark' ? 'dark' : 'light'];
+  try { mainWindow.setTitleBarOverlay(c); } catch (e) {}
+}
 // 「关闭后继续后台运行」状态（与 data/bg-run.json 同步，close 拦截据此判断）
 let backgroundRun = false;
 // 是否正在真正退出（before-quit 置 true，放行 close 事件）
@@ -327,6 +352,9 @@ function createTray() {
  *   preload                   —— 通过 contextBridge 安全暴露 API
  */
 function createWindow() {
+  // 初始标题栏按钮配色：按持久化主题 + 系统明暗预选，避免启动瞬间闪错色
+  const _initResolved = resolveThemeForTitlebar((readData('settings.json') || {}).theme);
+  const _initTb = TITLEBAR_COLORS[_initResolved];
   const win = new BrowserWindow({
     width: 1180,
     height: 760,
@@ -339,8 +367,8 @@ function createWindow() {
     // 这是 VSCode/Discord/Slack 的同款做法。
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      color: 'rgba(255, 255, 255, 0.92)',   // 按钮背景色（与 .titlebar 毛玻璃底色一致）
-      symbolColor: '#1E293B',                // 按钮图标颜色（与 --titlebar-text 一致）
+      color: _initTb.color,                  // 按钮背景色（跟随主题，与 .titlebar 毛玻璃底色一致）
+      symbolColor: _initTb.symbolColor,      // 按钮图标颜色（与 --titlebar-text 一致）
       height: 44                             // 按钮高度与 .titlebar 一致
     },
     backgroundColor: '#ffffff',             // 启动时避免白屏闪烁
@@ -414,6 +442,12 @@ ipcMain.handle('window:maximize-toggle', () => {
 });
 ipcMain.handle('window:close', () => { if (mainWindow) mainWindow.close(); });
 ipcMain.handle('window:is-maximized', () => mainWindow ? mainWindow.isMaximized() : false);
+
+// 渲染进程切换主题时同步系统标题栏按钮配色（light/dark）
+ipcMain.handle('window:set-titlebar-theme', async (event, resolved) => {
+  applyTitlebarTheme(resolved);
+  return { success: true };
+});
 
 // 抖音 / 千问 窗口与后台自动化
 
@@ -2661,28 +2695,36 @@ ipcMain.handle('sign:execute-desktop', async (event, {
 // 适用：Wails/WebView2、Electron 等 UIA 可访问的桌面应用
 // 优势：无需 PowerShell、不移动鼠标、不抢焦点、客户端自己生成安全校验
 
-ipcMain.handle('sign:execute-uia', async (event, {
-  exePath,
-  exeArgs = [],
-  launchDelay = 3000,
-  waitMode = 'auto',
-  waitWindowTitle = '',
-  waitTimeout = 30000,
-  procName = '',           // 进程名（不带 .exe），不填则从 exePath 推导
-  closeAfterSign = false,
-  btnKeywords = '',        // 按钮关键词，管道分隔（默认 "签到|打卡"）
-  doneKeywords = '',       // 已完成关键词，管道分隔（默认 "已签"）
-  successKeywords = '',    // 成功关键词，管道分隔
-  navName = '',            // 导航按钮名，空字符串表示不需要导航
-  forceRelaunch = false    // 强制重启（杀掉已有进程后重新启动，用于需要特殊启动参数的场景）
-}) => {
+ipcMain.handle('sign:execute-uia', async (event, params) => {
+  let {
+    exePath,
+    exeArgs = [],
+    launchDelay = 3000,
+    waitMode = 'auto',
+    waitWindowTitle = '',
+    waitTimeout = 30000,
+    procName = '',
+    closeAfterSign = false,
+    btnKeywords = '',
+    doneKeywords = '',
+    successKeywords = '',
+    navName = '',
+    forceRelaunch = false
+  } = params || {};
   const results = [];
   let targetProc = procName;
 
   // --- 步骤 1：检测/启动目标程序 ---
   if (exePath) {
     if (!fs.existsSync(exePath)) {
-      return { success: false, message: '可执行文件不存在：' + exePath };
+      // 跨电脑迁移：记录的路径在本机不存在时，按进程名自动定位
+      // （apps.json 快捷启动 / 开始菜单 / 常见安装路径）
+      const resolved = resolveExePath(targetProc || procName, exePath);
+      if (resolved) {
+        exePath = resolved;
+      } else {
+        return { success: false, message: '可执行文件不存在：' + exePath + '，且未能自动定位，请在任务编辑里重新选择程序位置' };
+      }
     }
     const exeName = path.basename(exePath);
     if (!targetProc) targetProc = exeName.replace(/\.exe$/i, '');
@@ -3089,6 +3131,183 @@ if (!gotTheLock) {
   });
 }
 
+// ======================== 跨电脑：exe 路径自动定位 ========================
+
+/**
+ * 解析 .lnk 快捷方式指向的真实 exe 路径（PowerShell WScript.Shell，同步 5s 超时）
+ * @param {string} lnkPath .lnk 文件完整路径
+ * @returns {string|null} 目标 exe 路径（存在才返回），失败返回 null
+ */
+function resolveLnkTarget(lnkPath) {
+  try {
+    const { execFileSync } = require('child_process');
+    const safe = lnkPath.replace(/'/g, "''");
+    const out = execFileSync('powershell.exe',
+      ['-NoProfile', '-Command', `(New-Object -ComObject WScript.Shell).CreateShortcut('${safe}').TargetPath`],
+      { windowsHide: true, timeout: 5000, encoding: 'utf-8' });
+    const target = (out || '').trim().split(/\r?\n/)[0].trim();
+    if (target && fs.existsSync(target)) return target;
+    return null;
+  } catch (e) { return null; }
+}
+
+/**
+ * 递归扫描开始菜单目录，找 <name>.exe 或 <name>.lnk（.lnk 解析为真实 exe）
+ * @param {string} dir 起始目录
+ * @param {string} name 程序名（不带 .exe）
+ * @param {number} depth 最大递归深度
+ * @returns {string|null} 找到的 exe 路径，找不到返回 null
+ */
+function scanShortcutForExe(dir, name, depth) {
+  if (depth < 0 || !dir) return null;
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return null; }
+  const lower = name.toLowerCase();
+  for (const ent of entries) {
+    const full = path.join(dir, ent.name);
+    if (ent.isFile()) {
+      const base = ent.name.toLowerCase();
+      if (base === lower + '.exe' && fs.existsSync(full)) return full;
+      if (base === lower + '.lnk') {
+        const t = resolveLnkTarget(full);
+        if (t) return t;
+      }
+    } else if (ent.isDirectory()) {
+      const r = scanShortcutForExe(full, name, depth - 1);
+      if (r) return r;
+    }
+  }
+  return null;
+}
+
+/**
+ * 自动定位可执行文件路径（跨电脑迁移核心：任务里记录的路径在新机器不存在时调用）
+ * 查找顺序：
+ *   ① 已记录的 exePath 仍存在 → 直接用
+ *   ② apps.json 快捷启动里同名项（.exe 直接用，.lnk 解析目标）
+ *   ③ 开始菜单 .lnk / .exe 递归扫描
+ *   ④ 常见安装路径候选
+ * @param {string} procName 进程名（不带 .exe，如 Hyperdown）
+ * @param {string} exePath 任务里记录的路径（可能不存在）
+ * @returns {string|null} 找到的 exe 完整路径，找不到返回 null
+ */
+function resolveExePath(procName, exePath) {
+  if (exePath && fs.existsSync(exePath)) return exePath;
+  const name = (procName || '').trim();
+  if (!name) return null;
+  const lowerName = name.toLowerCase();
+
+  // ② apps.json 快捷启动里同名项
+  try {
+    const apps = readData('apps.json');
+    if (Array.isArray(apps)) {
+      for (const a of apps) {
+        if (!a || !a.path) continue;
+        const base = path.basename(a.path).toLowerCase();
+        const matchByName = a.name && String(a.name).toLowerCase().indexOf(lowerName) >= 0;
+        const matchByBase = base === lowerName + '.exe';
+        if (matchByName || matchByBase) {
+          if (a.path.toLowerCase().endsWith('.exe') && fs.existsSync(a.path)) return a.path;
+          if (a.path.toLowerCase().endsWith('.lnk')) {
+            const t = resolveLnkTarget(a.path);
+            if (t) return t;
+          }
+        }
+      }
+    }
+  } catch (e) {}
+
+  // ③ 开始菜单递归扫描
+  const startMenus = [
+    path.join(process.env.APPDATA || '', 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+    path.join('C:', 'ProgramData', 'Microsoft', 'Windows', 'Start Menu', 'Programs')
+  ];
+  for (const root of startMenus) {
+    const found = scanShortcutForExe(root, name, 3);
+    if (found) return found;
+  }
+
+  // ④ 常见安装路径候选
+  const candidates = [
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', name, name + '.exe'),
+    path.join('C:', 'Program Files', name, name + '.exe'),
+    path.join('C:', 'Program Files (x86)', name, name + '.exe'),
+    path.join('D:', 'Program Files', name, name + '.exe'),
+    path.join('D:', name, name + '.exe'),
+    path.join('D:', 'DDL', name, name + '.exe'),
+    path.join('E:', name, name + '.exe')
+  ];
+  for (const p of candidates) {
+    if (p && fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
+// ======================== 定时自动签到调度器 ========================
+
+/**
+ * 每天到点自动触发所有未签任务：主进程 node-schedule 定时 → 通知渲染进程执行 Sign._signAll()
+ * 设计：签到逻辑全部在渲染进程 sign.js，主进程不重复实现，只负责"到点喊一声"。
+ *       配合「关闭后继续后台运行」，窗口隐藏时渲染进程仍存活，可正常触发。
+ */
+const signScheduler = { job: null };
+
+function startSignScheduler() {
+  if (!scheduleLib) return;
+  stopSignScheduler();
+  const conf = readData('sign-schedule.json');
+  if (!conf || !conf.enabled || !conf.time) return;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(conf.time).trim());
+  if (!m) { console.warn('[签到调度] 时间格式非法，已忽略:', conf.time); return; }
+  const hour = parseInt(m[1], 10);
+  const minute = parseInt(m[2], 10);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return;
+  const cron = `${minute} ${hour} * * *`;
+  signScheduler.job = scheduleLib.scheduleJob(cron, () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      console.log('[签到调度] 主窗口未就绪，跳过本次定时签到');
+      return;
+    }
+    const tasks = readData('sign-tasks.json');
+    const today = new Date().toISOString().slice(0, 10);
+    const pending = Array.isArray(tasks) ? tasks.filter(t => t.lastSignDate !== today) : [];
+    if (pending.length === 0) {
+      console.log('[签到调度] 今日全部已签，跳过');
+      return;
+    }
+    console.log(`[签到调度] 到点触发，${pending.length} 个任务待签`);
+    mainWindow.webContents.send('sign:auto-trigger');
+  });
+  console.log(`[签到调度] 已启动，每天 ${conf.time} 自动签到`);
+}
+
+function stopSignScheduler() {
+  if (signScheduler.job) {
+    signScheduler.job.cancel();
+    signScheduler.job = null;
+  }
+}
+
+// 定时签到配置读写 + exe 路径定位 IPC
+ipcMain.handle('sign:schedule-get', async () => {
+  return readData('sign-schedule.json');
+});
+
+ipcMain.handle('sign:schedule-set', async (event, conf) => {
+  const next = {
+    enabled: !!(conf && conf.enabled),
+    time: (conf && conf.time) || '09:00'
+  };
+  writeData('sign-schedule.json', next);
+  startSignScheduler();
+  return { success: true, value: next };
+});
+
+ipcMain.handle('sign:resolve-exe', async (event, { procName, exePath }) => {
+  const found = resolveExePath(procName, exePath);
+  return { found: !!found, path: found || '' };
+});
+
 /**
  * 自动检测 Hyperdown 安装并预置 UIA 签到任务（开箱即用）
  * 扫描常见安装路径，找到且尚无对应任务时自动添加一条 UIA 签到任务
@@ -3262,6 +3481,9 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(buildChineseMenu());
   createWindow();
   createTray();
+
+  // 启动定时自动签到调度器（按 sign-schedule.json 配置，每天到点触发）
+  startSignScheduler();
 
   // 预热网易云 API：窗口创建后立即后台启动，用户切到网易云页面时已就绪
   // 使用 spawnNeteaseApi 统一入口，neteaseApiWhenReady 记录就绪 Promise，

@@ -56,6 +56,31 @@
   --titlebar-text: #1E293B;
   --window-border: rgba(47, 62, 102, 0.12);
   --window-shadow: 0 10px 40px rgba(47, 62, 102, 0.18);
+
+  /* ===== 设计节奏 token：间距 / 字号 / 圆角（整体布局统一来源） ===== */
+  /* 间距：4 的倍数递进，用于 padding/gap/margin 节奏 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  /* 字号：明确层次，拉开标题与正文对比 */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 14px;
+  --text-md: 15px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+  --text-2xl: 28px;
+  --text-3xl: 30px;
+  /* 圆角：四档系统 */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
 }
 
 [data-theme="dark"] {
@@ -368,8 +393,8 @@ body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 0 12px;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
 }
 
 .nav-item {
@@ -377,12 +402,12 @@ body {
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 11px 14px;
+  padding: 12px 14px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--sidebar-text);
-  font-size: 14px;
+  font-size: var(--text-base);
   cursor: pointer;
   text-align: left;
   transition: background 0.15s, color 0.15s;
@@ -487,7 +512,7 @@ body {
 .app-main {
   flex: 1;
   overflow-y: auto;
-  padding: 68px 24px 24px; /* 顶部 68px = 标题栏 44px + 原 24px，让主内容从标题栏下方开始 */
+  padding: 68px var(--space-6) var(--space-6); /* 顶部 68px = 标题栏 44px + 原 24px，让主内容从标题栏下方开始 */
 }
 
 .page {
@@ -529,12 +554,12 @@ body {
    通用标题、分区、按钮
    --------------------------------------------------------------------- */
 .section-title {
-  font-size: 16px;
+  font-size: var(--text-lg);
   font-weight: 600;
-  margin-bottom: 14px;
+  margin-bottom: var(--space-4);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 /* 标题文字占左侧，操作按钮紧凑靠右 */
 .section-title > :first-child {
@@ -550,13 +575,13 @@ body {
   margin-right: 12px;
 }
 .web-search-input {
-  padding: 6px 12px;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
   border-right: none;
-  border-radius: 6px 0 0 6px;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
   background: var(--card-bg);
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--text-base);
   outline: none;
   width: 200px;
   transition: border-color 0.15s;
@@ -564,9 +589,9 @@ body {
 .web-search-input:focus { border-color: var(--primary); }
 .web-search-input::placeholder { color: var(--text-muted); }
 .web-search-btn {
-  padding: 6px 10px;
+  padding: var(--space-2) 10px;
   border: 1px solid var(--border);
-  border-radius: 0 6px 6px 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   background: var(--card-bg);
   color: var(--text-sub);
   cursor: pointer;
@@ -578,14 +603,14 @@ body {
 .web-search-btn:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
 /* Edge / Chrome 浏览器选择按钮（与搜索框同行） */
 .web-browser-btn {
-  padding: 6px 10px;
+  padding: var(--space-2) 10px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--card-bg);
   color: var(--text-sub);
-  font-size: 12px;
+  font-size: var(--text-sm);
   cursor: pointer;
-  margin-left: 6px;
+  margin-left: var(--space-2);
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 .web-browser-btn:hover {
@@ -611,20 +636,20 @@ body {
   backdrop-filter: blur(16px) saturate(140%);
   -webkit-backdrop-filter: blur(16px) saturate(140%);
   border: 1px solid var(--glass-border);
-  border-radius: 14px;
+  border-radius: var(--radius-xl);
   box-shadow: var(--shadow);
-  padding: 20px;
-  margin-bottom: 22px;
+  padding: var(--space-6);
+  margin-bottom: var(--space-6);
 }
 
 .btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
   border: none;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-base);
   cursor: pointer;
   transition: background 0.15s, opacity 0.15s;
   background: var(--card-bg);
@@ -657,8 +682,8 @@ body {
 
 .btn-sm {
   padding: 5px 10px;
-  font-size: 12px;
-  border-radius: 6px;
+  font-size: var(--text-sm);
+  border-radius: var(--radius-sm);
 }
 
 /* ===== 按钮 5 状态系统（Default / Hover / Pressed / Disabled / Loading） =====
@@ -723,8 +748,8 @@ body {
 .empty-tip {
   text-align: center;
   color: var(--text-muted);
-  padding: 40px 0;
-  font-size: 14px;
+  padding: var(--space-10) 0;
+  font-size: var(--text-base);
 }
 
 /* ---------------------------------------------------------------------
@@ -770,7 +795,7 @@ body {
   /* 换行排列：满了自动换行，取消横向滚动条 */
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .shortcut-card {
@@ -781,13 +806,13 @@ body {
   backdrop-filter: blur(12px) saturate(140%);
   -webkit-backdrop-filter: blur(12px) saturate(140%);
   border: 1px solid var(--glass-border);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 10px 6px;
+  padding: var(--space-3) var(--space-2);
   cursor: pointer;
   user-select: none;
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
@@ -851,7 +876,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
-  background: var(--card);
+  background: var(--card-bg);
   flex-shrink: 0;
 }
 
@@ -914,8 +939,8 @@ body {
 }
 
 .shortcut-name {
-  margin-top: 6px;
-  font-size: 11px;
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
   color: var(--text);
   text-align: center;
   word-break: break-all;
@@ -2034,18 +2059,18 @@ details.sign-advanced .form-item {
 
 /* 欢迎区 */
 .dashboard-welcome {
-  margin-bottom: 8px;
+  margin-bottom: var(--space-6);
 }
 
 .dashboard-hello {
-  font-size: 26px;
+  font-size: var(--text-3xl);
   font-weight: 700;
   color: var(--text);
 }
 
 .dashboard-sub {
-  margin-top: 6px;
-  font-size: 14px;
+  margin-top: var(--space-2);
+  font-size: var(--text-base);
   color: var(--text-sub);
 }
 
@@ -2053,18 +2078,18 @@ details.sign-advanced .form-item {
 .dashboard-stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
+  gap: var(--space-4);
 }
 
 .dashboard-stat-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 18px 12px;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-4);
   background: var(--card-bg);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-xl);
   cursor: pointer;
   transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
 }
@@ -2080,13 +2105,13 @@ details.sign-advanced .form-item {
 }
 
 .dashboard-stat-value {
-  font-size: 26px;
+  font-size: var(--text-2xl);
   font-weight: 700;
   color: var(--text);
 }
 
 .dashboard-stat-label {
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--text-sub);
 }
 
@@ -2095,10 +2120,10 @@ details.sign-advanced .form-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 18px;
+  padding: var(--space-4) var(--space-5);
   background: var(--card-bg);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-xl);
 }
 
 .dashboard-sign-info {
@@ -2127,17 +2152,17 @@ details.sign-advanced .form-item {
 .dashboard-entries {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
+  gap: var(--space-4);
 }
 
 .dashboard-entry {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 18px;
+  gap: var(--space-4);
+  padding: var(--space-5);
   background: var(--card-bg);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-xl);
   cursor: pointer;
   transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
 }
@@ -2154,14 +2179,14 @@ details.sign-advanced .form-item {
 }
 
 .dashboard-entry-title {
-  font-size: 15px;
+  font-size: var(--text-md);
   font-weight: 600;
   color: var(--text);
 }
 
 .dashboard-entry-desc {
-  margin-top: 4px;
-  font-size: 12px;
+  margin-top: var(--space-1);
+  font-size: var(--text-sm);
   color: var(--text-sub);
 }
 
@@ -2545,6 +2570,28 @@ details.sign-advanced .form-item {
   margin-top: 3px;
   font-size: 12px;
   color: var(--text-sub);
+}
+
+/* 设置行右侧多控件容器（如：时间框 + 开关并排） */
+.settings-row-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.settings-time-input {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  background: var(--card-bg);
+  color: var(--text);
+}
+
+.settings-time-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* iOS 风格拨动开关 */
