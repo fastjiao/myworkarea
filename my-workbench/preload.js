@@ -285,13 +285,10 @@ contextBridge.exposeInMainWorld('workbench', {
    */
   getPsTemplates: () => ipcRenderer.invoke('sign:ps-templates'),
 
-  // ======================== 抖音 / 千问外部窗口 ========================
+  // ======================== 抖音外部窗口 ========================
 
   /** 打开抖音独立全屏窗口（加载 douyin.com） */
   openDouyin: () => ipcRenderer.invoke('open-douyin'),
-
-  /** 打开通义千问独立窗口（加载 chat.qwen.ai，桌面 UA） */
-  openQwen: () => ipcRenderer.invoke('open-qwen'),
 
   // ======================== 坐标拾取器（桌面签到辅助） ========================
 

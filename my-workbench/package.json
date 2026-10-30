@@ -46,18 +46,9 @@
       "block-external-protocol-preload.js",
       "index.html",
       "styles.css",
-      "modules/**/*",
-      "data/**/*"
+      "modules/**/*"
     ],
-    "extraResources": [
-      {
-        "from": "data/",
-        "to": "data/",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
+    "afterPack": "./afterpack-trim.cjs",
     "asar": true
   },
   "keywords": [

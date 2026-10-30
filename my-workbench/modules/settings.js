@@ -46,6 +46,7 @@ window.SettingsWidget = {
     // 分区定义：第一个为「通用」（明暗模式 + 开机自启动 + 后台运行），其余按模块命名
     const sections = [
       { id: 'general', label: '通用', build: (p) => this._buildGeneralSection(p) },
+      { id: 'sign', label: '签到', build: (p) => this._buildSignSection(p) },
       { id: 'netease', label: '网易云音乐', build: (p) => this._buildNeteaseSection(p) }
     ];
 
@@ -124,44 +125,16 @@ window.SettingsWidget = {
     bgRow.appendChild(bgSwitch);
     panel.appendChild(bgRow);
 
-    // ---- 每天自动签到 ----
-    const schRow = UI.el('div', 'settings-row');
-    const schText = UI.el('div', 'settings-row-text');
-    schText.appendChild(UI.el('div', 'settings-row-title', '每天自动签到'));
-    schText.appendChild(UI.el('div', 'settings-row-desc', '到点自动执行所有未签任务'));
-    const schCtrl = UI.el('div', 'settings-row-ctrl');
-    const schTime = UI.el('input', 'settings-time-input');
-    schTime.type = 'time';
-    schTime.value = '09:00';
-    const schSwitch = UI.el('label', 'toggle-switch');
-    schSwitch.title = '每天自动签到';
-    const schCheckbox = document.createElement('input');
-    schCheckbox.type = 'checkbox';
-    schCheckbox.setAttribute('aria-label', '每天自动签到');
-    schSwitch.appendChild(schCheckbox);
-    schSwitch.appendChild(UI.el('span', 'toggle-slider'));
-    schCtrl.appendChild(schTime);
-    schCtrl.appendChild(schSwitch);
-    schRow.appendChild(schText);
-    schRow.appendChild(schCtrl);
-    panel.appendChild(schRow);
-
-    // 统一读取三项当前状态（自启动 / 后台运行 / 定时签到）
+    // 读取自启动 / 后台运行两项当前状态
     Promise.all([
       window.workbench.getAutoStart(),
-      window.workbench.getBackgroundRun(),
-      window.workbench.getSignSchedule()
-    ]).then(([autoOn, bgOn, sch]) => {
+      window.workbench.getBackgroundRun()
+    ]).then(([autoOn, bgOn]) => {
       autoCheckbox.checked = !!autoOn;
       bgCheckbox.checked = !!bgOn;
-      schCheckbox.checked = !!(sch && sch.enabled);
-      schTime.value = (sch && sch.time) || '09:00';
-      schTime.disabled = !schCheckbox.checked;
     }).catch(() => {
       autoCheckbox.checked = false;
       bgCheckbox.checked = false;
-      schCheckbox.checked = false;
-      schTime.disabled = true;
     });
 
     autoCheckbox.addEventListener('change', async () => {
@@ -190,6 +163,39 @@ window.SettingsWidget = {
         bgCheckbox.checked = !want;
         UI.setToast('设置失败：' + e.message, 'error');
       }
+    });
+  },
+
+  // 签到分区：每天自动签到（开关 + 时间），从通用分区独立出来
+  _buildSignSection(panel) {
+    const schRow = UI.el('div', 'settings-row');
+    const schText = UI.el('div', 'settings-row-text');
+    schText.appendChild(UI.el('div', 'settings-row-title', '每天自动签到'));
+    schText.appendChild(UI.el('div', 'settings-row-desc', '到点自动执行所有未签任务'));
+    const schCtrl = UI.el('div', 'settings-row-ctrl');
+    const schTime = UI.el('input', 'settings-time-input');
+    schTime.type = 'time';
+    schTime.value = '09:00';
+    const schSwitch = UI.el('label', 'toggle-switch');
+    schSwitch.title = '每天自动签到';
+    const schCheckbox = document.createElement('input');
+    schCheckbox.type = 'checkbox';
+    schCheckbox.setAttribute('aria-label', '每天自动签到');
+    schSwitch.appendChild(schCheckbox);
+    schSwitch.appendChild(UI.el('span', 'toggle-slider'));
+    schCtrl.appendChild(schTime);
+    schCtrl.appendChild(schSwitch);
+    schRow.appendChild(schText);
+    schRow.appendChild(schCtrl);
+    panel.appendChild(schRow);
+
+    window.workbench.getSignSchedule().then((sch) => {
+      schCheckbox.checked = !!(sch && sch.enabled);
+      schTime.value = (sch && sch.time) || '09:00';
+      schTime.disabled = !schCheckbox.checked;
+    }).catch(() => {
+      schCheckbox.checked = false;
+      schTime.disabled = true;
     });
 
     const applySchedule = async () => {

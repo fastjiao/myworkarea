@@ -37,7 +37,6 @@
   -->
   <div class="tech-backdrop" aria-hidden="true">
     <div class="tech-grid"></div>
-    <canvas id="fx-canvas" class="fx-canvas"></canvas>
   </div>
 
   <!-- 应用整体布局：左侧固定侧边栏 + 右侧主内容区 -->
@@ -77,11 +76,6 @@
           <span class="nav-icon" data-icon="music"></span>
           <span class="nav-label">网易云音乐</span>
         </button>
-        <!-- 千问：主窗口内嵌 webview 虚拟页面 -->
-        <button class="nav-item" data-page="qwen">
-          <span class="nav-icon" data-icon="qwen"></span>
-          <span class="nav-label">千问</span>
-        </button>
 
       </nav>
 
@@ -103,12 +97,6 @@
         <section id="page-calendar" class="page"></section>
         <section id="page-sign" class="page"></section>
         <section id="page-netease" class="page"></section>
-        <!-- 千问：内嵌 webview（独立 partition 持久化登录态，桌面 UA 保证网页版可用） -->
-        <section id="page-qwen" class="page page-embed">
-          <webview id="webview-qwen" class="webview-box" data-src="https://chat.qwen.ai/"
-            partition="persist:qwen-session"
-            useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"></webview>
-        </section>
       </main>
     </div>
   </div>
@@ -141,7 +129,7 @@
   </div>
 
   <!-- 通用模态框：内容由 JS 动态填充，供添加/编辑表单复用 -->
-  <div id="modal-overlay" class="modal-overlay" hidden>
+  <div id="modal-overlay" class="modal-overlay">
     <div class="modal" role="dialog" aria-labelledby="modal-title">
       <div class="modal-header">
         <h2 id="modal-title" class="modal-title"></h2>

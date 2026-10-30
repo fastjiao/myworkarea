@@ -1,5 +1,6 @@
 // modules/dashboard.js —— 首页仪表盘模块
-// 职责：工作台门户页，展示欢迎语、快捷统计、今日签到状态、各模块入口
+// 职责：工作台门户页，展示欢迎语、签到提示、快捷统计、模块入口
+// 设计：去卡片通栏沉浸式，签到提示融入问候区（未签/已签两态）
 // 说明：通过 window.Store / window.UI / window.switchPage 访问共享能力。
 
 window.Dashboard = {
@@ -13,16 +14,48 @@ window.Dashboard = {
     page.innerHTML = '';
     page.appendChild(this._buildWelcome());
     page.appendChild(this._buildStats());
-    page.appendChild(this._buildSignStatus());
     page.appendChild(this._buildEntries());
   },
 
-  // 欢迎区：按时段问候 + 当前日期
+  // 欢迎区：按时段问候 + 当前日期 + 签到提示条（融入）
   _buildWelcome() {
     const sec = UI.el('div', 'section dashboard-welcome');
     sec.appendChild(UI.el('div', 'dashboard-hello', this._greeting()));
     sec.appendChild(UI.el('div', 'dashboard-sub', this._dateStr()));
+    sec.appendChild(this._buildSignHint());
     return sec;
+  },
+
+  // 签到提示条：融入问候区下方，通栏非卡片
+  // 三态：无任务（引导添加）/ 已签完（完成态）/ 待签（可点击跳签到页）
+  _buildSignHint() {
+    const tasks = (window.Sign && Array.isArray(window.Sign._tasks)) ? window.Sign._tasks : [];
+    const today = DateUtil.today();
+    const done = tasks.filter((t) => t.lastSignDate === today).length;
+    const total = tasks.length;
+
+    const hint = UI.el('div', 'dashboard-sign-hint');
+    const ic = UI.el('span', 'dashboard-sign-hint-icon');
+
+    if (total === 0) {
+      hint.classList.add('is-empty');
+      ic.innerHTML = window.svgIcon('flag', 16);
+      hint.appendChild(ic);
+      hint.appendChild(UI.el('span', '', '暂无签到任务，点击前往添加'));
+      hint.addEventListener('click', () => window.switchPage('sign'));
+    } else if (done >= total) {
+      hint.classList.add('is-done');
+      ic.innerHTML = window.svgIcon('check', 16);
+      hint.appendChild(ic);
+      hint.appendChild(UI.el('span', '', '今日已签到 ' + done + '/' + total));
+    } else {
+      hint.classList.add('is-pending');
+      ic.innerHTML = window.svgIcon('flag', 16);
+      hint.appendChild(ic);
+      hint.appendChild(UI.el('span', '', '今日还未签到（' + done + '/' + total + '），点击立即签到'));
+      hint.addEventListener('click', () => window.switchPage('sign'));
+    }
+    return hint;
   },
 
   /** 按当前小时返回问候语 */
@@ -42,7 +75,7 @@ window.Dashboard = {
     return d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + week;
   },
 
-  // 快捷统计：软件 / 文件夹·文件 / 网页 / 今日事件
+  // 快捷统计：通栏一行，竖线分隔各项，去卡片
   _buildStats() {
     const sec = UI.el('div', 'section');
     const title = UI.el('div', 'section-title');
@@ -56,52 +89,23 @@ window.Dashboard = {
       { icon: 'calendar', label: '今日事件',     value: Store.todayEvents().length,   page: 'calendar' }
     ];
 
-    const grid = UI.el('div', 'dashboard-stats');
-    stats.forEach((s) => grid.appendChild(this._buildStatCard(s)));
-    sec.appendChild(grid);
-    return sec;
-  },
-
-  _buildStatCard(s) {
-    const card = UI.el('div', 'dashboard-stat-card');
-    card.addEventListener('click', () => window.switchPage(s.page));
-    const ic = UI.el('div', 'dashboard-stat-icon');
-    ic.innerHTML = window.svgIcon(s.icon, 22);
-    card.appendChild(ic);
-    card.appendChild(UI.el('div', 'dashboard-stat-value', String(s.value)));
-    card.appendChild(UI.el('div', 'dashboard-stat-label', s.label));
-    return card;
-  },
-
-  // 今日签到状态：已签 / 共 / 待签，附「前往签到」按钮
-  _buildSignStatus() {
-    const tasks = (window.Sign && Array.isArray(window.Sign._tasks)) ? window.Sign._tasks : [];
-    const today = DateUtil.today();
-    const done = tasks.filter((t) => t.lastSignDate === today).length;
-    const total = tasks.length;
-    const pending = total - done;
-
-    const sec = UI.el('div', 'section');
-    const title = UI.el('div', 'section-title');
-    title.appendChild(UI.el('span', '', '今日签到'));
-    sec.appendChild(title);
-
-    const bar = UI.el('div', 'dashboard-sign-bar');
-    const info = UI.el('div', 'dashboard-sign-info');
-    info.appendChild(UI.el('span', 'dashboard-sign-done', '已签 ' + done));
-    info.appendChild(UI.el('span', 'dashboard-sign-sep', '/'));
-    info.appendChild(UI.el('span', '', '共 ' + total));
-    if (pending > 0) info.appendChild(UI.el('span', 'dashboard-sign-pending', '待签 ' + pending));
-    bar.appendChild(info);
-
-    const goBtn = UI.el('button', 'btn btn-primary btn-sm', '前往签到');
-    goBtn.addEventListener('click', () => window.switchPage('sign'));
-    bar.appendChild(goBtn);
+    const bar = UI.el('div', 'dashboard-stats-bar');
+    stats.forEach((s, i) => {
+      if (i > 0) bar.appendChild(UI.el('span', 'dashboard-stats-sep'));
+      const item = UI.el('div', 'dashboard-stat-item');
+      item.addEventListener('click', () => window.switchPage(s.page));
+      const ic = UI.el('span', 'dashboard-stat-icon');
+      ic.innerHTML = window.svgIcon(s.icon, 18);
+      item.appendChild(ic);
+      item.appendChild(UI.el('span', 'dashboard-stat-value', String(s.value)));
+      item.appendChild(UI.el('span', 'dashboard-stat-label', s.label));
+      bar.appendChild(item);
+    });
     sec.appendChild(bar);
     return sec;
   },
 
-  // 各模块快捷入口（点击跳转对应页）
+  // 快捷入口：通栏列表，每行一个，分隔线分隔，去卡片
   _buildEntries() {
     const sec = UI.el('div', 'section');
     const title = UI.el('div', 'section-title');
@@ -114,22 +118,25 @@ window.Dashboard = {
       { icon: 'calendar', title: '日历',     desc: '查看与管理日程事件',     page: 'calendar' }
     ];
 
-    const grid = UI.el('div', 'dashboard-entries');
-    entries.forEach((e) => grid.appendChild(this._buildEntryCard(e)));
-    sec.appendChild(grid);
+    const list = UI.el('div', 'dashboard-entry-list');
+    entries.forEach((e) => list.appendChild(this._buildEntryRow(e)));
+    sec.appendChild(list);
     return sec;
   },
 
-  _buildEntryCard(e) {
-    const card = UI.el('div', 'dashboard-entry');
-    card.addEventListener('click', () => window.switchPage(e.page));
-    const ic = UI.el('div', 'dashboard-entry-icon');
-    ic.innerHTML = window.svgIcon(e.icon, 26);
-    card.appendChild(ic);
+  _buildEntryRow(e) {
+    const row = UI.el('div', 'dashboard-entry-row');
+    row.addEventListener('click', () => window.switchPage(e.page));
+    const ic = UI.el('span', 'dashboard-entry-icon');
+    ic.innerHTML = window.svgIcon(e.icon, 20);
+    row.appendChild(ic);
     const body = UI.el('div', 'dashboard-entry-body');
     body.appendChild(UI.el('div', 'dashboard-entry-title', e.title));
     body.appendChild(UI.el('div', 'dashboard-entry-desc', e.desc));
-    card.appendChild(body);
-    return card;
+    row.appendChild(body);
+    const arrow = UI.el('span', 'dashboard-entry-arrow');
+    arrow.innerHTML = window.svgIcon('right', 18);
+    row.appendChild(arrow);
+    return row;
   }
 };

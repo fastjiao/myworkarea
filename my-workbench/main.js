@@ -280,8 +280,8 @@ let mainWindow = null;
 // 系统标题栏按钮（最小/最大/关闭）配色：跟随应用主题，避免暗色主题下按钮区突兀
 // 与 styles.css 的 --titlebar-bg / --titlebar-text 两套主题值保持一致
 const TITLEBAR_COLORS = {
-  light: { color: 'rgba(255, 255, 255, 0.92)', symbolColor: '#1E293B' },
-  dark:  { color: 'rgba(30, 38, 57, 0.92)',   symbolColor: '#E8EDF8' }
+  light: { color: '#E8EEFB', symbolColor: '#1E293B' },
+  dark:  { color: '#1E2639', symbolColor: '#E8EDF8' }
 };
 
 /** 把主题模式解析为 light/dark（system 模式跟 OS） */
@@ -371,7 +371,7 @@ function createWindow() {
       symbolColor: _initTb.symbolColor,      // 按钮图标颜色（与 --titlebar-text 一致）
       height: 44                             // 按钮高度与 .titlebar 一致
     },
-    backgroundColor: '#ffffff',             // 启动时避免白屏闪烁
+    backgroundColor: '#E8EEFB',             // 启动时避免白屏闪烁（与标题栏浅蓝一致）
     autoHideMenuBar: true,                  // 隐藏菜单栏，Alt 才显示
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -449,11 +449,10 @@ ipcMain.handle('window:set-titlebar-theme', async (event, resolved) => {
   return { success: true };
 });
 
-// 抖音 / 千问 窗口与后台自动化
+// 抖音窗口与后台自动化
 
-// 抖音主窗口、千问窗口引用
+// 抖音主窗口引用
 let douyinWindow = null;
-let qwenWindow = null;
 
 // 记录需要拦截外部协议唤起的 webContents ID，供 session permission handler 精确匹配
 const blockedWcIds = new Set();
@@ -518,14 +517,6 @@ function blockExternalProtocols(contents) {
   // 覆盖 <a> 点击 / window.open / location / 动态 iframe，此处主进程事件仅作兜底
 }
 
-// 主窗口内嵌的 <webview>（抖音/千问页面）创建的 webContents 同样挂上外部协议拦截，
-// 否则 webview 内的 bytedance:// 等协议仍会触发 Chromium 确认弹窗
-app.on('web-contents-created', (event, contents) => {
-  if (contents.getType() === 'webview') {
-    blockExternalProtocols(contents);
-  }
-});
-
 /**
  * 打开抖音独立全屏窗口（浏览抖音网页版，支持手动刷视频/看直播/聊天）
  * 复用已有窗口，避免重复打开
@@ -553,49 +544,11 @@ function createDouyinWindow() {
   douyinWindow.on('closed', () => { douyinWindow = null; });
 }
 
-/**
- * 打开通义千问独立窗口（网页嵌套模式，桌面 UA 保证网页版功能正常）
- * 使用独立 partition 持久化千问登录态
- */
-function createQwenWindow() {
-  if (qwenWindow && !qwenWindow.isDestroyed()) {
-    qwenWindow.show();
-    qwenWindow.focus();
-    return;
-  }
-  const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-  qwenWindow = new BrowserWindow({
-    width: Math.min(width, 1280),
-    height: Math.min(height, 860),
-    title: '通义千问',
-    backgroundColor: '#ffffff',
-    webPreferences: {
-      preload: path.join(__dirname, 'block-external-protocol-preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      partition: 'persist:qwen-session'
-    }
-  });
-  // 设置常见桌面浏览器 UA，避免千问网页版识别为异常环境
-  qwenWindow.webContents.setUserAgent(
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-  );
-  blockExternalProtocols(qwenWindow.webContents);
-  qwenWindow.loadURL('https://chat.qwen.ai/');
-  qwenWindow.on('closed', () => { qwenWindow = null; });
-}
-
-// 抖音 / 千问 IPC 通信
+// 抖音 IPC 通信
 
 // 打开抖音独立全屏窗口
 ipcMain.handle('open-douyin', () => {
   createDouyinWindow();
-  return { success: true };
-});
-
-// 打开通义千问独立窗口
-ipcMain.handle('open-qwen', () => {
-  createQwenWindow();
   return { success: true };
 });
 
