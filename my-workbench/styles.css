@@ -255,18 +255,11 @@ body {
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
-  background:
-    radial-gradient(1200px 600px at 15% -10%, rgba(95, 134, 255, 0.16), transparent 62%),
-    radial-gradient(1000px 560px at 85% 10%, rgba(169, 194, 255, 0.22), transparent 58%),
-    linear-gradient(135deg, #F8FAFF 0%, #EEF3FE 50%, #F5F8FF 100%);
+  background: linear-gradient(135deg, #F8FAFF 0%, #EEF3FE 100%);
 }
 
 [data-theme="dark"] .tech-backdrop {
-  background:
-    radial-gradient(1100px 520px at 12% -8%, rgba(95, 134, 255, 0.28), transparent 60%),
-    radial-gradient(900px 480px at 88% 8%, rgba(169, 194, 255, 0.16), transparent 55%),
-    radial-gradient(720px 520px at 50% 115%, rgba(95, 134, 255, 0.18), transparent 60%),
-    linear-gradient(135deg, #0C1128 0%, #151D3A 50%, #0E1327 100%);
+  background: linear-gradient(135deg, #0C1128 0%, #151D3A 100%);
 }
 
 .tech-grid {
@@ -332,11 +325,10 @@ body {
   gap: 8px;
   font-size: 15px;
   font-weight: 700;
-  color: #1E293B;
+  color: var(--sidebar-text-active);
   padding: 0 16px 24px;
   white-space: nowrap;
   -webkit-app-region: drag; /* 侧边栏顶部作为窗口拖拽区（标题栏不覆盖侧边栏） */
-  /* 品牌发光已移除：原 text-shadow 浅蓝光晕在文字下方扩散成白色底纹 */
 }
 
 /* 品牌文字：超长时省略号截断，收起时由 .sidebar.collapsed 隐藏 */
@@ -761,13 +753,14 @@ body {
   /* 换行排列：满了自动换行，取消横向滚动条 */
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-3);
+  gap: 5px;
 }
 
 .shortcut-card {
   position: relative;
   flex: 0 0 auto;
   width: 64px;
+  aspect-ratio: 1 / 1;
   background: var(--glass-bg);
   backdrop-filter: blur(12px) saturate(140%);
   -webkit-backdrop-filter: blur(12px) saturate(140%);
@@ -778,7 +771,7 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: var(--space-3) var(--space-2);
+  padding: var(--space-1);
   cursor: pointer;
   user-select: none;
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
@@ -794,6 +787,8 @@ body {
 }
 
 .shortcut-icon {
+  width: 34px;
+  height: 34px;
   font-size: 20px;
   line-height: 1;
   display: flex;
@@ -905,11 +900,14 @@ body {
 }
 
 .shortcut-name {
-  margin-top: var(--space-2);
+  margin-top: var(--space-1);
   font-size: var(--text-xs);
+  line-height: 1.2;
   color: var(--text);
   text-align: center;
-  word-break: break-all;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   max-width: 100%;
 }
 
