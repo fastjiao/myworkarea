@@ -1715,6 +1715,43 @@ function _wbInvalidateToken() {
 }
 
 /**
+ * WorkBuddy 未运行时最小化启动并等待就绪（token 写入内存）
+ * MemoryScan 需读取运行中进程的内存，进程不在则扫不到 token
+ * @param {string} procName 进程名
+ * @param {string} exePath 可选 exe 路径；未提供则自动定位
+ * @returns {Promise<{success: boolean, alreadyRunning?: boolean, launched?: boolean, message?: string}>}
+ */
+async function _wbEnsureRunning(procName, exePath) {
+  const name = procName || 'WorkBuddy';
+  const exeName = name + '.exe';
+  if (await isProcessRunning(exeName)) return { success: true, alreadyRunning: true };
+  // 定位 exePath：优先传入路径 → resolveExePath 自动定位 → 候选路径兜底
+  let target = (exePath && fs.existsSync(exePath)) ? exePath : resolveExePath(name, '');
+  if (!target) {
+    const candidates = [
+      path.join(process.env.LOCALAPPDATA || '', 'Programs', 'WorkBuddy', 'WorkBuddy.exe'),
+      'C:\\Program Files\\WorkBuddy\\WorkBuddy.exe',
+      'C:\\Program Files (x86)\\WorkBuddy\\WorkBuddy.exe',
+      'D:\\Program Files\\WorkBuddy\\WorkBuddy.exe'
+    ];
+    for (const p of candidates) { if (p && fs.existsSync(p)) { target = p; break; } }
+  }
+  if (!target) return { success: false, message: '未找到 WorkBuddy 安装路径' };
+  // 最小化启动（不弹窗打扰，签到全程后台完成）
+  const launchRes = await launchExe(target, [], { minimized: true });
+  if (!launchRes.success) return { success: false, message: '启动失败：' + launchRes.message };
+  // 等待进程出现（最多 20s）
+  for (let i = 0; i < 20; i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    if (await isProcessRunning(exeName)) break;
+  }
+  if (!(await isProcessRunning(exeName))) return { success: false, message: '启动超时，进程未出现' };
+  // 等待 Electron 加载完成、accessToken 写入内存
+  await new Promise(r => setTimeout(r, 8000));
+  return { success: true, launched: true };
+}
+
+/**
  * 查询 WorkBuddy 签到状态（严格判定，杜绝 truthy 误判）
  * @param {string} token JWT
  * @returns {Promise<{ok: boolean, todayCheckedIn: boolean, streakDays?: number, code?: number, error?: string}>}
@@ -1751,7 +1788,12 @@ ipcMain.handle('sign:workbuddy-sign', async (event, params) => {
     const procName = (params && params.procName) || 'WorkBuddy';
     // P0-1: 优先用缓存 token；查询失败时清缓存重新提取一次再试
     let token = await _wbGetToken(procName);
-    if (!token) return { ok: false, error: '未能从 WorkBuddy 进程内存提取 accessToken，请确认 WorkBuddy 正在运行' };
+    if (!token) {
+      // WorkBuddy 可能未运行：最小化启动后重新提取 token
+      const ensure = await _wbEnsureRunning(procName, (params && params.exePath) || '');
+      if (ensure.success) token = await _wbGetToken(procName);
+    }
+    if (!token) return { ok: false, error: '未能提取 accessToken，请确认 WorkBuddy 已登录并运行' };
 
     const apiUrl = 'https://www.workbuddy.cn/v2/billing/meter/daily-checkin';
     const buildHeaders = (tk) => ({
@@ -1813,6 +1855,100 @@ ipcMain.handle('sign:workbuddy-sign', async (event, params) => {
 });
 
 /**
+ * 胖盒云电脑签到：读取本地凭证 → checklogin 获取 token → getcheckinlist 查待签 → checkinprize 签到
+ * 纯 HTTP 后台静默完成，不启动胖盒客户端
+ */
+ipcMain.handle('sign:panghebox-sign', async () => {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const cfgPath = path.join(process.env.APPDATA, 'Panghebox', 'panghebox', 'shared_preferences.json');
+    if (!fs.existsSync(cfgPath)) {
+      return { ok: false, error: '未找到胖盒登录凭证，请确认胖盒客户端已登录' };
+    }
+    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+    const accessKey = cfg['flutter.last_login_access_key'];
+    const uidRaw = cfg['flutter.uid'];
+    const uid = (typeof uidRaw === 'string' && !isNaN(Number(uidRaw))) ? Number(uidRaw) : uidRaw;
+    const machineId = cfg['flutter.machine_id'];
+    if (!accessKey || !uid || !machineId) {
+      return { ok: false, error: '胖盒登录凭证不完整，请在胖盒客户端重新登录' };
+    }
+
+    const apiHost = 'https://h5-proxy.panghebox.com';
+    const baseHeaders = {
+      'content-type': 'application/json',
+      'version': '1.10.12',
+      'machineid': machineId,
+      'accesskey': accessKey,
+      'platform': 'window'
+    };
+
+    // Step 1: checklogin 获取 token
+    const loginRes = await signHttpRequest({
+      url: apiHost + '/v1/nika/client/checklogin',
+      method: 'POST',
+      headers: baseHeaders,
+      body: JSON.stringify({ access_key: accessKey, uid: uid, machine_id: machineId, platform: 'window' })
+    });
+    if (loginRes.error) return { ok: false, error: '登录校验失败：' + loginRes.error };
+    let token;
+    try {
+      const loginData = JSON.parse(loginRes.body);
+      token = loginData.token;
+      if (!token) return { ok: false, error: loginData.msg || '获取 token 失败，胖盒登录可能已过期' };
+    } catch (e) {
+      return { ok: false, error: '登录响应解析失败' };
+    }
+
+    const authHeaders = Object.assign({}, baseHeaders, { 'authorization': token });
+
+    // Step 2: getcheckinlist 查待签
+    const listRes = await signHttpRequest({
+      url: apiHost + '/v1/nika/client/getcheckinlist',
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({ access_key: accessKey, scene_type: 1, uid: uid })
+    });
+    if (listRes.error) return { ok: false, error: '查询签到列表失败：' + listRes.error };
+    let checkinList;
+    try {
+      const listData = JSON.parse(listRes.body);
+      checkinList = listData.checkin_list;
+      if (!Array.isArray(checkinList)) return { ok: false, error: listData.msg || '签到列表格式异常' };
+    } catch (e) {
+      return { ok: false, error: '签到列表解析失败' };
+    }
+
+    const unsigned = checkinList.find(item => !item.date);
+    if (!unsigned) {
+      return { ok: true, alreadyCheckedIn: true, message: '本周签到已全部完成' };
+    }
+
+    // Step 3: checkinprize 签到
+    const prizeRes = await signHttpRequest({
+      url: apiHost + '/v1/nika/client/checkinprize',
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({ access_key: accessKey, scene_type: 1, uid: uid, prize_id: unsigned.prize_id, prize_sec_id: unsigned.prize_sec_id })
+    });
+    if (prizeRes.error) return { ok: false, error: '签到请求失败：' + prizeRes.error };
+    let prizeName;
+    try {
+      const prizeData = JSON.parse(prizeRes.body);
+      prizeName = prizeData.prize_name;
+      if (!prizeName) return { ok: false, error: prizeData.msg || '签到失败' };
+    } catch (e) {
+      return { ok: false, error: '签到响应解析失败' };
+    }
+
+    return { ok: true, checkedInNow: true, message: '签到成功，获得「' + prizeName + '」' };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+/**
  * WorkBuddy 签到状态查询：只查服务端状态，不触发签到
  * 用于"校准状态"按钮 / 已签重验，避免本地假成功记录锁死当天
  */
@@ -1820,7 +1956,12 @@ ipcMain.handle('sign:workbuddy-status', async (event, params) => {
   try {
     const procName = (params && params.procName) || 'WorkBuddy';
     let token = await _wbGetToken(procName);
-    if (!token) return { ok: false, error: '未能从 WorkBuddy 进程内存提取 accessToken，请确认 WorkBuddy 正在运行' };
+    if (!token) {
+      // WorkBuddy 可能未运行：最小化启动后重新提取 token
+      const ensure = await _wbEnsureRunning(procName, (params && params.exePath) || '');
+      if (ensure.success) token = await _wbGetToken(procName);
+    }
+    if (!token) return { ok: false, error: '未能提取 accessToken，请确认 WorkBuddy 已登录并运行' };
 
     let status = await _wbQueryStatus(token);
     if (!status.ok) {
@@ -2004,8 +2145,20 @@ async function _hdEnsureCdpReady() {
 ipcMain.handle('sign:hyperdown-cdp-sign', async (event, params) => {
   try {
     const exePath = (params && params.exePath) || '';
-    const ready = await _hdEnsureCdpReady();
-    if (!ready) return { success: false, message: '无法连接 Hyperdown CDP 调试端口，请确认 Hyperdown 已安装' };
+    let ready = await _hdEnsureCdpReady();
+    // CDP 不可用 && 提供 exePath → 最小化启动 Hyperdown（开启 CDP 端口），实现静默签到
+    if (!ready && exePath && fs.existsSync(exePath)) {
+      const cdpEnv = Object.assign({}, process.env, {
+        WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=' + HD_CDP_PORT
+      });
+      await launchExe(exePath, [], { minimized: true, env: cdpEnv });
+      // 轮询等待 CDP 端口就绪（最多 25s，Hyperdown 冷启动较慢）
+      for (let i = 0; i < 25 && !ready; i++) {
+        await new Promise(r => setTimeout(r, 1000));
+        ready = await _hdEnsureCdpReady();
+      }
+    }
+    if (!ready) return { success: false, message: '无法连接 Hyperdown CDP 调试端口（已尝试自动启动，可能未开启远程调试）' };
     const targets = await _hdListCdpTargets();
     const target = targets.find(t => t.type === 'page');
     if (!target || !target.webSocketDebuggerUrl) return { success: false, message: 'CDP 无可用页面' };
@@ -2337,14 +2490,16 @@ function runPowerShell(psScript, timeoutMs = 30000) {
  * （部分 Electron 应用用 spawn 启动会立即退出，但 start 方式正常）
  * @returns {{success: boolean, pid?: number, message?: string}}
  */
-function launchExe(exePath, args = []) {
+function launchExe(exePath, args = [], options = {}) {
   return new Promise((resolve) => {
     try {
-      let cmd = 'start "" "' + exePath + '"';
+      let cmd = (options.minimized ? 'start /min "" "' : 'start "" "') + exePath + '"';
       if (args && args.length > 0) {
         cmd += ' ' + args.map(a => '"' + a + '"').join(' ');
       }
-      require('child_process').exec(cmd, { windowsHide: true }, (err) => {
+      const execOpts = { windowsHide: true };
+      if (options.env) execOpts.env = options.env;
+      require('child_process').exec(cmd, execOpts, (err) => {
         if (err) {
           resolve({ success: false, message: err.message });
         } else {
@@ -2662,7 +2817,8 @@ ipcMain.handle('sign:execute-uia', async (event, params) => {
     doneKeywords = '',
     successKeywords = '',
     navName = '',
-    forceRelaunch = false
+    forceRelaunch = false,
+    launchMinimized = false
   } = params || {};
   const results = [];
   let targetProc = procName;
@@ -2690,7 +2846,7 @@ ipcMain.handle('sign:execute-uia', async (event, params) => {
         require('child_process').execSync('taskkill /F /IM ' + exeName, { windowsHide: true, stdio: 'ignore' });
       } catch (e) {}
       await new Promise(r => setTimeout(r, 2500));
-      const launchRes = await launchExe(exePath, exeArgs);
+      const launchRes = await launchExe(exePath, exeArgs, { minimized: launchMinimized });
       results.push({ step: 'launch', ...launchRes, forceRelaunched: true });
       if (!launchRes.success) {
         return { success: false, message: '强制重启失败：' + launchRes.message, results };
@@ -2701,11 +2857,15 @@ ipcMain.handle('sign:execute-uia', async (event, params) => {
       // 后续 wait 步骤对已运行实例跳过固定等待；auto 模式由 PS 脚本快速确认就绪
       results.push({ step: 'launch', success: true, alreadyRunning: true, message: '程序已在运行，直接复用' });
     } else if (targetProc === 'Hyperdown') {
-      // 后台签到模式：不主动启动 Hyperdown（避免弹窗打扰），要求用户已启动
-      // 和 WorkBuddy 一样：进程在运行才签到，不弹窗
-      return { success: false, message: 'Hyperdown 未运行，请先启动 Hyperdown（签到在后台完成，不弹窗）', results };
+      // Hyperdown 未运行：最小化启动后继续签到
+      // （CDP 静默签到失败时的回退路线；CDP 已启动则走上面的 alreadyRunning 分支）
+      const launchRes = await launchExe(exePath, exeArgs, { minimized: true });
+      results.push({ step: 'launch', ...launchRes, autoLaunched: true });
+      if (!launchRes.success) {
+        return { success: false, message: '启动 Hyperdown 失败：' + launchRes.message, results };
+      }
     } else {
-      const launchRes = await launchExe(exePath, exeArgs);
+      const launchRes = await launchExe(exePath, exeArgs, { minimized: launchMinimized });
       results.push({ step: 'launch', ...launchRes });
       if (!launchRes.success) {
         return { success: false, message: '启动失败：' + launchRes.message, results };

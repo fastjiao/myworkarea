@@ -1,0 +1,86 @@
+09:40:56.544 ========== uia-checkin 开始 ==========
+09:40:56.550 [参数] procName=panghebox btnKw=[立即签到] doneKw=[已签到|已签] successKw=[您已签到|签到成功|连续签到|领取成功|已领取] navName=[每日签到]
+09:40:56.553 [进程] 查找进程: panghebox
+09:40:56.578 [进程] 找到 1 个进程
+09:40:56.584 [窗口] 尝试 MainWindowHandle=3738322 PID=21820
+09:40:56.822 [窗口] 成功获取 AutomationElement
+09:40:56.823 [窗口] 最终使用窗口句柄: 3738322
+09:40:56.825 [无障碍] 开始触发...
+09:40:56.827 [无障碍] 设置 SPI_SETSCREENREADER=1
+09:40:57.837 [无障碍] SetForegroundWindow + 发送 Tab 键
+09:40:58.445 [无障碍] 等待 5s 构建无障碍树...
+09:41:03.671 [无障碍] 已恢复 SPI_SETSCREENREADER=0
+09:41:03.673 [无障碍] 触发完成，重新获取 root
+09:41:03.719 [枚举] 遍历 3 节点，找到 0 个 Button:
+09:41:03.720 [签到] FindButton 查找签到按钮...
+09:41:03.732 [FindButton] 遍历 3 节点/0 按钮，未匹配
+09:41:03.732 [签到] FindButton 结果: 未找到
+09:41:03.733 [导航] 未找到签到按钮，尝试 ClickNav 导航: [每日签到]
+09:41:03.735 [ClickNav] 查找导航按钮 Name 包含 [每日签到]
+09:41:03.739 [ClickNav] 遍历 3 节点/0 按钮，未找到匹配的导航按钮
+09:41:03.740 [结果] success=False message=未找到每日签到导航按钮，且当前页无目标按钮
+10:38:47.652 ========== uia-checkin 开始 ==========
+10:38:47.658 [参数] procName=Hyperdown btnKw=[签到|打卡] doneKw=[已签] successKw=[签到成功|今日已签|已签到|领取成功|已领取] navName=[首页]
+10:38:47.659 [进程] 查找进程: Hyperdown
+10:38:47.674 [进程] 找到 1 个进程
+10:38:47.677 [窗口] 尝试 MainWindowHandle=458988 PID=22092
+10:38:47.926 [窗口] 成功获取 AutomationElement
+10:38:47.926 [窗口] 最终使用窗口句柄: 458988
+10:38:47.927 [无障碍] 开始触发...
+10:38:47.928 [无障碍] 设置 SPI_SETSCREENREADER=1
+10:38:48.262 [无障碍] SetForegroundWindow + 发送 Tab 键
+10:38:48.878 [无障碍] 等待 5s 构建无障碍树...
+10:38:54.132 [无障碍] 已恢复 SPI_SETSCREENREADER=0
+10:38:54.134 [无障碍] 触发完成，重新获取 root
+10:38:54.732 [枚举] 遍历 172 节点，找到 40 个 Button:
+10:38:54.732   Button[1] Name=[关闭] Invoke=True
+10:38:54.733   Button[2] Name=[还原] Invoke=True
+10:38:54.734   Button[3] Name=[最小化] Invoke=True
+10:38:54.734   Button[4] Name=[新建标签页] Invoke=True
+10:38:54.735   Button[5] Name=[关闭标签页] Invoke=True
+10:38:54.736   Button[6] Name=[协作者个人资料照片] Invoke=False
+10:38:54.736   Button[7] Name=[协作者个人资料照片] Invoke=False
+10:38:54.738   Button[8] Name=[协作者个人资料照片] Invoke=False
+10:38:54.738   Button[9] Name=[协作者个人资料照片] Invoke=False
+10:38:54.739   Button[10] Name=[对此标签页静音] Invoke=True
+10:38:54.739   Button[11] Name=[更多操作] Invoke=False
+10:38:54.739   Button[12] Name=[保存地址？] Invoke=False
+10:38:54.740   Button[13] Name=[立即购买，稍后支付] Invoke=False
+10:38:54.740   Button[14] Name=[查看虚拟卡号] Invoke=False
+10:38:54.740   Button[15] Name=[更新此网站的自动配置文件切换首选项] Invoke=False
+10:38:54.741   Button[16] Name=[] Invoke=False
+10:38:54.741   Button[17] Name=[启用强制重新身份验证] Invoke=False
+10:38:54.742   Button[18] Name=[添加虚拟卡] Invoke=False
+10:38:54.743   Button[19] Name=[查看虚拟卡号] Invoke=False
+10:38:54.743   Button[20] Name=[保存卡] Invoke=False
+10:38:54.744   Button[21] Name=[保存卡] Invoke=False
+10:38:54.745   Button[22] Name=[已阻止第三方 Cookie] Invoke=False
+10:38:54.746   Button[23] Name=[缩放: 100%] Invoke=False
+10:38:54.746   Button[24] Name=[显示翻译选项] Invoke=False
+10:38:54.747   Button[25] Name=[应用程序可用。安装 ] Invoke=False
+10:38:54.747   Button[26] Name=[在应用中打开] Invoke=False
+10:38:54.748   Button[27] Name=[] Invoke=False
+10:38:54.748   Button[28] Name=[改为搜索] Invoke=False
+10:38:54.748   Button[29] Name=[] Invoke=False
+10:38:54.748   Button[30] Name=[] Invoke=False
+10:38:54.749   Button[31] Name=[] Invoke=False
+10:38:54.749   Button[32] Name=[] Invoke=False
+10:38:54.750   Button[33] Name=[] Invoke=False
+10:38:54.750   Button[34] Name=[] Invoke=False
+10:38:54.750   Button[35] Name=[] Invoke=False
+10:38:54.751   Button[36] Name=[] Invoke=True
+10:38:54.751   Button[37] Name=[关闭] Invoke=True
+10:38:54.751   Button[38] Name=[还原] Invoke=True
+10:38:54.752   Button[39] Name=[最大化] Invoke=True
+10:38:54.752   Button[40] Name=[最小化] Invoke=True
+10:38:54.754 [签到] FindButton 查找签到按钮...
+10:38:55.182 [FindButton] 遍历 157 节点/15 按钮后匹配: [每日签到 领取随机流量奖励]
+10:38:55.183 [签到] FindButton 结果: 找到按钮 Name=[每日签到 领取随机流量奖励]
+10:38:55.184 [判定] 按钮名=[每日签到 领取随机流量奖励] 检查是否已完成
+10:38:55.185 [Invoke] IsInvokePatternAvailable=True 按钮=[每日签到 领取随机流量奖励]
+10:38:55.185 [Invoke] 调用 Invoke()...
+10:38:55.316 [Invoke] Invoke() 已调用
+10:38:57.332 [轮询] 第 1/15 轮...
+10:38:57.649 [HasText] 匹配到 [今日已签到 今日获得 2.00 GB] (第 157 节点)
+10:38:57.650 [轮询] 检测到成功文字
+10:38:57.651 [结果] success=True message=操作成功

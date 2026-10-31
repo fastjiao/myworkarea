@@ -174,6 +174,12 @@ contextBridge.exposeInMainWorld('workbench', {
   workbuddyStatus: (params) => ipcRenderer.invoke('sign:workbuddy-status', params),
 
   /**
+   * 胖盒云电脑签到：读取本地凭证，纯 HTTP 后台静默签到
+   * @returns {Promise<{ok: boolean, message?: string, error?: string, alreadyCheckedIn?: boolean}>}
+   */
+  executePangheboxSign: () => ipcRenderer.invoke('sign:panghebox-sign'),
+
+  /**
    * 打开网页登录窗口（登录后 cookie 持久化，供一键抓取）
    * @param {{ url: string }} params 签到接口 URL
    * @returns {Promise<{success: boolean, loginUrl?: string, message?: string}>}

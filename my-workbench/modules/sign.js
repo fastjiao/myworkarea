@@ -13,6 +13,7 @@ window.Sign = {
       const saved = await window.workbench.loadSignTasks();
       // 移除旧版桌面任务（本次仅保留网页 HTTP 接口签到）
       this._tasks = Array.isArray(saved) ? saved.filter((t) => t && t.taskType !== 'desktop') : [];
+      this._refreshDashboard();
     } catch (e) {
       this._tasks = [];
     }
@@ -30,6 +31,14 @@ window.Sign = {
 
   async _persist() {
     await window.workbench.saveSignTasks(this._tasks);
+  },
+
+  // 任务变化后通知首页刷新签到统计
+  // （Dashboard.init 可能先于本模块 init 完成，拿到空数组；签到后也需刷新）
+  _refreshDashboard() {
+    if (window.Dashboard && typeof window.Dashboard.render === 'function') {
+      try { window.Dashboard.render(); } catch (e) {}
+    }
   },
 
   render() {
@@ -78,8 +87,8 @@ window.Sign = {
     const head = UI.el('div', 'skill-card-head');
     head.appendChild(UI.el('div', 'skill-name', task.name));
 
-    const typeBadge = task.taskType === 'wps' ? 'WPS' : (task.taskType === 'uia' ? 'UIA' : (task.taskType === 'workbuddy' ? 'API' : '网页'));
-    const typeClass = task.taskType === 'wps' ? 'sign-type-wps' : (task.taskType === 'uia' ? 'sign-type-uia' : (task.taskType === 'workbuddy' ? 'sign-type-wps' : 'sign-type-web'));
+    const typeBadge = task.taskType === 'wps' ? 'WPS' : (task.taskType === 'uia' ? 'UIA' : (task.taskType === 'workbuddy' ? 'API' : (task.taskType === 'panghebox' ? 'API' : '网页')));
+    const typeClass = task.taskType === 'wps' ? 'sign-type-wps' : (task.taskType === 'uia' ? 'sign-type-uia' : (task.taskType === 'workbuddy' ? 'sign-type-wps' : (task.taskType === 'panghebox' ? 'sign-type-wps' : 'sign-type-web')));
     const typeLabel = UI.el('span', 'sign-type-badge ' + typeClass, typeBadge);
     head.appendChild(typeLabel);
 
@@ -184,6 +193,7 @@ window.Sign = {
           forceRelaunch: task.forceRelaunch || false,
           waitMode: task.waitMode || 'auto',
           closeAfterSign: task.closeAfterSign || false,
+          launchMinimized: task.launchMinimized || false,
           btnKeywords: task.btnKeywords || '',
           doneKeywords: task.doneKeywords || '',
           successKeywords: task.successKeywords || '',
@@ -214,7 +224,13 @@ window.Sign = {
           message: res.message || (res.ok ? '签到成功' : '签到失败')
         };
       } else if (task.taskType === 'workbuddy') {
-        const res = await window.workbench.executeWorkbuddySign({ procName: task.procName || 'WorkBuddy' });
+        const res = await window.workbench.executeWorkbuddySign({ procName: task.procName || 'WorkBuddy', exePath: task.exePath || '' });
+        verdict = {
+          success: res.ok,
+          message: res.message || res.error || (res.ok ? '签到成功' : '签到失败')
+        };
+      } else if (task.taskType === 'panghebox') {
+        const res = await window.workbench.executePangheboxSign();
         verdict = {
           success: res.ok,
           message: res.message || (res.ok ? '签到成功' : '签到失败')
@@ -254,6 +270,7 @@ window.Sign = {
     }, 15000);
 
     this.render();
+    this._refreshDashboard();
   },
 
   /**

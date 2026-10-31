@@ -33,6 +33,7 @@ window.Dashboard = {
     const today = DateUtil.today();
     const done = tasks.filter((t) => t.lastSignDate === today).length;
     const total = tasks.length;
+    const pending = total - done;
 
     const hint = UI.el('div', 'dashboard-sign-hint');
     const ic = UI.el('span', 'dashboard-sign-hint-icon');
@@ -41,19 +42,20 @@ window.Dashboard = {
       hint.classList.add('is-empty');
       ic.innerHTML = window.svgIcon('flag', 16);
       hint.appendChild(ic);
-      hint.appendChild(UI.el('span', '', '暂无签到任务，点击前往添加'));
+      hint.appendChild(UI.el('span', '', '当前未添加签到任务'));
       hint.addEventListener('click', () => window.switchPage('sign'));
-    } else if (done >= total) {
-      hint.classList.add('is-done');
-      ic.innerHTML = window.svgIcon('check', 16);
-      hint.appendChild(ic);
-      hint.appendChild(UI.el('span', '', '今日已签到 ' + done + '/' + total));
     } else {
-      hint.classList.add('is-pending');
-      ic.innerHTML = window.svgIcon('flag', 16);
+      const text = '已签到 ' + done + '，未签到 ' + pending + '，总计 ' + total;
+      if (pending === 0) {
+        hint.classList.add('is-done');
+        ic.innerHTML = window.svgIcon('check', 16);
+      } else {
+        hint.classList.add('is-pending');
+        ic.innerHTML = window.svgIcon('flag', 16);
+        hint.addEventListener('click', () => window.switchPage('sign'));
+      }
       hint.appendChild(ic);
-      hint.appendChild(UI.el('span', '', '今日还未签到（' + done + '/' + total + '），点击立即签到'));
-      hint.addEventListener('click', () => window.switchPage('sign'));
+      hint.appendChild(UI.el('span', '', text));
     }
     return hint;
   },
