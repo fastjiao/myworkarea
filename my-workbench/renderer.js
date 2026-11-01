@@ -323,7 +323,7 @@ const PAGE_MODULES = {};
 
 /**
  * 切换到指定页面：更新导航高亮、显示对应 section、刷新该模块内容
- * @param {string} pageName 页面名（home / calendar / sign / netease）
+ * @param {string} pageName 页面名（sign / home）
  */
 function switchPage(pageName) {
   document.querySelectorAll('.nav-item').forEach((btn) => {
@@ -332,22 +332,6 @@ function switchPage(pageName) {
   document.querySelectorAll('.page').forEach((page) => {
     page.classList.toggle('active', page.id === 'page-' + pageName);
   });
-  // 时钟只在首页（dashboard）显示，其他页面隐藏
-  const clock = document.getElementById('clock-widget');
-  if (clock) clock.style.display = (pageName === 'dashboard') ? '' : 'none';
-  // 网易云播放底栏只在「音乐」(netease) 页面显示，其他页面隐藏
-  const neteaseBar = document.getElementById('netease-player-bar');
-  if (neteaseBar) neteaseBar.style.display = (pageName === 'netease') ? '' : 'none';
-  // 网易云顶栏组件只在「音乐」页面显示（嵌入标题栏内部，不增加高度）
-  const neteaseTitlebarContent = document.getElementById('netease-titlebar-content');
-  if (neteaseTitlebarContent) neteaseTitlebarContent.hidden = (pageName !== 'netease');
-  document.body.classList.toggle('netease-bar-active', pageName === 'netease' && neteaseBar && neteaseBar.classList.contains('show'));
-  // 歌词面板只在「音乐」页面显示，切换其他页面时自动关闭
-  if (pageName !== 'netease' && window.Netease && window.Netease._lyricVisible) {
-    window.Netease._lyricVisible = false;
-    const lyricPanel = document.getElementById('netease-lyric-panel');
-    if (lyricPanel) lyricPanel.classList.remove('show');
-  }
   const mod = PAGE_MODULES[pageName];
   if (mod && typeof mod.render === 'function') {
     mod.render();
@@ -407,11 +391,8 @@ async function init() {
   initWindowControls();
 
   // 4. 注册可切换的页面模块
-  PAGE_MODULES.dashboard = window.Dashboard;
-  PAGE_MODULES.home = window.Home;
-  PAGE_MODULES.calendar = window.Calendar;
   PAGE_MODULES.sign = window.Sign;
-  PAGE_MODULES.netease = window.Netease;
+  PAGE_MODULES.home = window.Home;
 
   // 5. 绑定导航点击
   document.querySelectorAll('.nav-item').forEach((btn) => {
@@ -431,8 +412,6 @@ async function init() {
       sidebarToggle.title = collapsed ? '展开侧边栏' : '收起侧边栏';
       // 同步标题栏 left：收起时跟随侧边栏变窄（64px），展开时回 210px
       if (titlebarEl) titlebarEl.style.left = collapsed ? '64px' : '210px';
-      const neteaseBarEl = document.getElementById('netease-player-bar');
-      if (neteaseBarEl) neteaseBarEl.style.left = collapsed ? '64px' : '210px';
     });
   }
 
@@ -479,22 +458,17 @@ async function init() {
   });
 
   // 9. 初始化各功能模块
-  [window.Dashboard, window.Home, window.Calendar, window.Sign, window.Netease].forEach((mod) => {
+  [window.Sign, window.Home].forEach((mod) => {
     if (mod && typeof mod.init === 'function') mod.init();
   });
-
-  // 9.1 初始化右上角时钟组件（全局悬浮，不属于页面级模块）
-  if (window.ClockWidget && typeof window.ClockWidget.init === 'function') {
-    window.ClockWidget.init();
-  }
 
   // 9.2 初始化设置弹窗（侧边栏齿轮入口 + 开机自启动开关）
   if (window.SettingsWidget && typeof window.SettingsWidget.init === 'function') {
     window.SettingsWidget.init();
   }
 
-  // 10. 默认进入首页（仪表盘）
-  switchPage('dashboard');
+  // 10. 默认进入一键签到页
+  switchPage('sign');
 }
 
 // 把共享对象挂到全局，供模块和页面脚本访问

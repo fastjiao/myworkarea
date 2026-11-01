@@ -47,6 +47,7 @@ class CheckinHelper {
   delegate void WinEventDelegate(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
 
   const int SW_RESTORE = 9;
+  const int SW_SHOW = 5;
   const uint EVENT_OBJECT_SHOW = 0x8002;
   const uint WINEVENT_OUTOFCONTEXT = 0x0;
   const byte VK_TAB = 0x09;
@@ -108,10 +109,12 @@ class CheckinHelper {
         }
       }
 
-      // 若没找到，用 EnumWindows 找隐藏的 Chrome_WidgetWin_1 窗口并显示
+      // 若没找到，用 EnumWindows 找属于目标进程的窗口（不限类名，兼容 Wails/WebView2/Electron）
       if (root == null) {
         IntPtr hiddenHwnd = FindHiddenWindow(pidSet);
         if (hiddenHwnd != IntPtr.Zero) {
+          ShowWindow(hiddenHwnd, SW_SHOW);
+          Thread.Sleep(200);
           ShowWindow(hiddenHwnd, SW_RESTORE);
           Thread.Sleep(2000);
           SetForegroundWindow(hiddenHwnd);
@@ -166,24 +169,31 @@ class CheckinHelper {
     } catch (Exception ex) { Out(false, "异常: " + ex.Message); }
   }
 
-  // 通过 EnumWindows 找到属于目标进程的隐藏 Electron 主窗口
+  // 通过 EnumWindows 找到属于目标进程的窗口（兼容 Electron/Wails/WebView2/原生窗口）
   static IntPtr FindHiddenWindow(HashSet<int> pidSet) {
-    IntPtr found = IntPtr.Zero;
+    IntPtr visibleHwnd = IntPtr.Zero;
+    IntPtr titledHwnd = IntPtr.Zero;
+    IntPtr anyHwnd = IntPtr.Zero;
     EnumWindows((hWnd, lParam) => {
       int pid;
       GetWindowThreadProcessId(hWnd, out pid);
       if (pidSet.Contains(pid)) {
         var cls = new System.Text.StringBuilder(256);
         GetClassName(hWnd, cls, 256);
-        // Electron 主窗口类名：Chrome_WidgetWin_1
-        if (cls.ToString() == "Chrome_WidgetWin_1") {
-          found = hWnd;
-          return false; // 停止枚举
-        }
+        var title = new System.Text.StringBuilder(256);
+        GetWindowText(hWnd, title, 256);
+        string clsStr = cls.ToString();
+        string titleStr = title.ToString();
+        // 跳过输入法/系统辅助窗口
+        if (clsStr == "IME" || clsStr == "MSCTFIME UI" || clsStr.StartsWith("SoPY") || clsStr.StartsWith("Sogou")) return true;
+        if (anyHwnd == IntPtr.Zero) anyHwnd = hWnd;
+        // 优先找有实际标题的窗口（跳过 __wails_hidden 等内部辅助窗口）
+        if (titleStr.Length > 0 && !titleStr.StartsWith("__wails") && titledHwnd == IntPtr.Zero) titledHwnd = hWnd;
+        if (IsWindowVisible(hWnd) && visibleHwnd == IntPtr.Zero) visibleHwnd = hWnd;
       }
       return true;
     }, IntPtr.Zero);
-    return found;
+    return visibleHwnd != IntPtr.Zero ? visibleHwnd : (titledHwnd != IntPtr.Zero ? titledHwnd : anyHwnd);
   }
 
   static AutomationElement FindButton(AutomationElement root) {

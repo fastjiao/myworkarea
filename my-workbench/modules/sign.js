@@ -13,7 +13,6 @@ window.Sign = {
       const saved = await window.workbench.loadSignTasks();
       // 移除旧版桌面任务（本次仅保留网页 HTTP 接口签到）
       this._tasks = Array.isArray(saved) ? saved.filter((t) => t && t.taskType !== 'desktop') : [];
-      this._refreshDashboard();
     } catch (e) {
       this._tasks = [];
     }
@@ -31,14 +30,6 @@ window.Sign = {
 
   async _persist() {
     await window.workbench.saveSignTasks(this._tasks);
-  },
-
-  // 任务变化后通知首页刷新签到统计
-  // （Dashboard.init 可能先于本模块 init 完成，拿到空数组；签到后也需刷新）
-  _refreshDashboard() {
-    if (window.Dashboard && typeof window.Dashboard.render === 'function') {
-      try { window.Dashboard.render(); } catch (e) {}
-    }
   },
 
   render() {
@@ -270,7 +261,6 @@ window.Sign = {
     }, 15000);
 
     this.render();
-    this._refreshDashboard();
   },
 
   /**

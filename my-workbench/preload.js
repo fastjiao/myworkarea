@@ -232,20 +232,6 @@ contextBridge.exposeInMainWorld('workbench', {
    */
   onSignAutoTrigger: (callback) => ipcRenderer.on('sign:auto-trigger', () => callback()),
 
-  // ======================== 网易云音乐 ========================
-
-  /**
-   * 代理请求网易云音乐 API（localhost:3000），由主进程发起，规避渲染进程跨域限制
-   * @param {{ apiPath: string, query?: object, cookie?: string }} params
-   * @returns {Promise<{success: boolean, status?: number, body?: string, setCookie?: string[], message?: string}>}
-   */
-  neteaseFetch: (params) => ipcRenderer.invoke('netease:fetch', params),
-
-  /** 自动启动网易云 API 子进程（主进程 fork netease-api-host.js） */
-  neteaseStartApi: () => ipcRenderer.invoke('netease:start-api'),
-  /** 停止网易云 API 子进程 */
-  neteaseStopApi: () => ipcRenderer.invoke('netease:stop-api'),
-
   // ======================== 桌面程序签到（PowerShell 自动化） ========================
 
   /**

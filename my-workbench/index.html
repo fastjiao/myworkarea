@@ -17,15 +17,13 @@
   <!-- ===================== 窗口外壳 =====================
        titleBarStyle:'hidden' + titleBarOverlay 后，系统绘制最小/最大/关闭按钮（右上角），
        并接管 Aero Snap/Win+方向键/双击最大化/任务栏缩略图。
-       .titlebar 是应用自绘的毛玻璃顶栏（含网易云组件），设为 drag 区让系统接管拖拽。
+       .titlebar 是应用自绘的毛玻璃顶栏，设为 drag 区让系统接管拖拽。
   -->
   <div class="window-shell">
 
-    <!-- 自定义标题栏：拖拽区（-webkit-app-region: drag）+ 网易云顶栏组件 -->
+    <!-- 自定义标题栏：拖拽区（-webkit-app-region: drag） -->
     <!-- 系统按钮在右上角由 OS 绘制，.titlebar 右侧留出 140px 避让（见 styles.css） -->
     <div class="titlebar">
-      <!-- 网易云顶栏组件：嵌入标题栏内部，仅 netease 页面显示，不增加标题栏高度 -->
-      <div id="netease-titlebar-content" class="netease-titlebar-content" hidden></div>
       <span class="titlebar-title">教公台-阡稻工作室</span>
     </div>
 
@@ -56,27 +54,14 @@
 
       <!-- 导航菜单：data-page 属性关联对应页面，data-icon 关联 SVG 图标 -->
       <nav class="sidebar-nav">
-        <button class="nav-item active" data-page="dashboard">
-          <span class="nav-icon" data-icon="home"></span>
-          <span class="nav-label">首页</span>
+        <button class="nav-item active" data-page="sign">
+          <span class="nav-icon" data-icon="flag"></span>
+          <span class="nav-label">一键签到</span>
         </button>
         <button class="nav-item" data-page="home">
           <span class="nav-icon" data-icon="app"></span>
           <span class="nav-label">快捷启动</span>
         </button>
-        <button class="nav-item" data-page="sign">
-          <span class="nav-icon" data-icon="flag"></span>
-          <span class="nav-label">一键签到</span>
-        </button>
-        <button class="nav-item" data-page="calendar">
-          <span class="nav-icon" data-icon="calendar"></span>
-          <span class="nav-label">日历</span>
-        </button>
-        <button class="nav-item" data-page="netease">
-          <span class="nav-icon" data-icon="music"></span>
-          <span class="nav-label">网易云音乐</span>
-        </button>
-
       </nav>
 
       <!-- 侧边栏底部：设置入口（齿轮+文字，收起时只显示齿轮） -->
@@ -92,40 +77,10 @@
     <div class="main-area">
       <main class="app-main">
         <!-- 页面容器，内容由对应模块 JS 动态渲染 -->
-        <section id="page-dashboard" class="page active"></section>
+        <section id="page-sign" class="page active"></section>
         <section id="page-home" class="page"></section>
-        <section id="page-calendar" class="page"></section>
-        <section id="page-sign" class="page"></section>
-        <section id="page-netease" class="page"></section>
       </main>
     </div>
-  </div>
-
-  <!-- ===================== 右上角时钟组件 =====================
-       模式 A（默认）：圆形模拟时钟；模式 B：数字时钟 HH:MM:SS
-       点击 / 回车切换，指针旋转由 CSS transform: rotate() 驱动
-       🔴 -webkit-app-region: no-drag 保证时钟在自己区域内可点击，
-          不影响标题栏其余部分的拖拽（若未来启用无边框拖拽布局）
-  -->
-  <div id="clock-widget" class="clock-widget" data-mode="analog"
-       role="button" tabindex="0" aria-label=""
-       title="">
-    <!-- 模式 A：模拟表盘（刻度与 12/3/6/9 数字由 clock.js 动态生成） -->
-    <div class="clock-analog clock-view" aria-hidden="true">
-      <div class="clock-hand hand-hour"></div>
-      <div class="clock-hand hand-minute"></div>
-      <div class="clock-hand hand-second"></div>
-      <div class="clock-center"></div>
-    </div>
-    <!-- 模式 B：数字时钟（如不需要下方日期行，删除 clock-digital-date 一行即可） -->
-    <div class="clock-digital clock-view" aria-hidden="true">
-      <div class="clock-digital-time">
-        <span id="clock-dh">00</span><span class="clock-colon">:</span><span id="clock-dm">00</span><span class="clock-colon">:</span><span id="clock-ds">00</span>
-      </div>
-      <div class="clock-digital-date" id="clock-date"></div>
-    </div>
-  </div>
-
   </div>
 
   <!-- 通用模态框：内容由 JS 动态填充，供添加/编辑表单复用 -->
@@ -155,12 +110,8 @@
     renderer.js 最后加载，定义 Store / UI 工具并触发各模块初始化。
   -->
   <script src="modules/icons.js"></script>
-  <script src="modules/dashboard.js"></script>
-  <script src="modules/home.js"></script>
-  <script src="modules/calendar.js"></script>
   <script src="modules/sign.js"></script>
-  <script src="modules/netease.js"></script>
-  <script src="modules/clock.js"></script>
+  <script src="modules/home.js"></script>
   <script src="modules/settings.js"></script>
   <script src="renderer.js"></script>
 </body>

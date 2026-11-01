@@ -84,3 +84,34 @@
 10:38:57.649 [HasText] 匹配到 [今日已签到 今日获得 2.00 GB] (第 157 节点)
 10:38:57.650 [轮询] 检测到成功文字
 10:38:57.651 [结果] success=True message=操作成功
+10:31:46.051 ========== uia-checkin 开始 ==========
+10:31:46.052 [参数] procName=Hyperdown btnKw=[签到|打卡] doneKw=[已签] successKw=[签到成功|今日已签|已签到|领取成功|已领取] navName=[首页]
+10:31:46.053 [进程] 查找进程: Hyperdown
+10:31:46.064 [进程] 找到 1 个进程
+10:31:46.065 [窗口] 尝试 MainWindowHandle=1510166 PID=26492
+10:31:46.207 [窗口] 成功获取 AutomationElement
+10:31:46.208 [窗口] 最终使用窗口句柄: 1510166
+10:31:46.209 [无障碍] 开始触发...
+10:31:46.210 [无障碍] 设置 SPI_SETSCREENREADER=1
+10:31:47.671 [无障碍] SetForegroundWindow + 发送 Tab 键
+10:31:48.303 [无障碍] 等待 5s 构建无障碍树...
+10:31:54.835 [无障碍] 已恢复 SPI_SETSCREENREADER=0
+10:31:54.836 [无障碍] 触发完成，重新获取 root
+10:31:54.892 [枚举] 遍历 7 节点，找到 3 个 Button:
+10:31:54.893   Button[1] Name=[关闭] Invoke=True
+10:31:54.894   Button[2] Name=[最大化] Invoke=True
+10:31:54.895   Button[3] Name=[还原] Invoke=True
+10:31:54.895 [签到] FindButton 查找签到按钮...
+10:31:54.903 [FindButton] 遍历 7 节点/3 按钮，未匹配
+10:31:54.904 [签到] FindButton 结果: 未找到
+10:31:54.904 [导航] 未找到签到按钮，尝试 ClickNav 导航: [首页]
+10:31:54.907 [ClickNav] 查找导航按钮 Name 包含 [首页]
+10:31:54.916 [ClickNav] 遍历 7 节点/3 按钮，未找到匹配的导航按钮
+10:31:54.917 [结果] success=False message=未找到首页导航按钮，且当前页无目标按钮
+10:32:56.968 ========== uia-checkin 开始 ==========
+10:32:56.970 [参数] procName=Hyperdown btnKw=[签到|打卡] doneKw=[已签] successKw=[签到成功|今日已签|已签到|领取成功|已领取] navName=[首页]
+10:32:56.971 [进程] 查找进程: Hyperdown
+10:32:56.985 [进程] 找到 1 个进程
+10:32:56.988 [窗口] MainWindowHandle 未找到，尝试 EnumWindows 找隐藏窗口
+10:32:56.994 [窗口] EnumWindows 也未找到隐藏窗口
+10:32:56.996 [结果] success=False message=无法获取主窗口（程序可能最小化到托盘）

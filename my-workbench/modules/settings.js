@@ -46,8 +46,7 @@ window.SettingsWidget = {
     // 分区定义：第一个为「通用」（明暗模式 + 开机自启动 + 后台运行），其余按模块命名
     const sections = [
       { id: 'general', label: '通用', build: (p) => this._buildGeneralSection(p) },
-      { id: 'sign', label: '签到', build: (p) => this._buildSignSection(p) },
-      { id: 'netease', label: '网易云音乐', build: (p) => this._buildNeteaseSection(p) }
+      { id: 'sign', label: '签到', build: (p) => this._buildSignSection(p) }
     ];
 
     sections.forEach((s, i) => {
@@ -214,79 +213,4 @@ window.SettingsWidget = {
     schTime.addEventListener('change', applySchedule);
   },
 
-  // 网易云音乐分区：打卡目标数量（持久化到 netease-data.json）
-  _buildNeteaseSection(panel) {
-    if (!window.Netease) {
-      panel.appendChild(UI.el('div', 'empty-tip', '网易云音乐模块未加载'));
-      return;
-    }
-    const field = UI.el('div', 'settings-field');
-    field.appendChild(UI.el('label', 'settings-field-label', '打卡目标数量'));
-    field.appendChild(UI.el('div', 'settings-field-desc', '每日听歌打卡刷的歌曲数量（1-300，网易云每日上限 300）'));
-    const input = document.createElement('input');
-    input.className = 'settings-input';
-    input.type = 'number';
-    input.min = '1';
-    input.max = '300';
-    input.value = String(window.Netease._dakaTarget || 300);
-    field.appendChild(input);
-    panel.appendChild(field);
-
-    // ---- 快捷键自定义（上一首 / 下一首 / 暂停播放） ----
-    panel.appendChild(UI.el('div', 'settings-section-title', '快捷键'));
-    const sc = (Store.settings && Store.settings.neteaseShortcuts) || {};
-    const shortcutDefs = [
-      ['prev', '上一首', 'ArrowLeft'],
-      ['next', '下一首', 'ArrowRight'],
-      ['playPause', '暂停 / 播放', 'Space']
-    ];
-    const shortcutInputs = {};
-    shortcutDefs.forEach(([key, label, def]) => {
-      const f = UI.el('div', 'settings-field');
-      f.appendChild(UI.el('label', 'settings-field-label', label));
-      const inp = UI.el('input', 'settings-input shortcut-input');
-      inp.value = _keyLabel(sc[key] || def);
-      inp.dataset.code = sc[key] || def;
-      inp.readOnly = true;
-      inp.placeholder = '点击后按下快捷键';
-      inp.addEventListener('focus', () => { inp.value = '请按下快捷键…'; });
-      inp.addEventListener('keydown', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        inp.dataset.code = e.code;
-        inp.value = _keyLabel(e.code);
-        inp.blur();
-      });
-      shortcutInputs[key] = inp;
-      f.appendChild(inp);
-      panel.appendChild(f);
-    });
-
-    const actions = UI.el('div', 'settings-actions');
-    const saveBtn = UI.el('button', 'settings-btn', '保存');
-    saveBtn.type = 'button';
-    saveBtn.addEventListener('click', async () => {
-      const v = Math.min(300, Math.max(1, parseInt(input.value, 10) || 300));
-      window.Netease._dakaTarget = v;
-      input.value = String(v);
-      // 收集快捷键
-      const newSc = {};
-      Object.keys(shortcutInputs).forEach((k) => { newSc[k] = shortcutInputs[k].dataset.code; });
-      Store.settings.neteaseShortcuts = newSc;
-      UI.setBtnLoading(saveBtn, true, '保存中…');
-      try {
-        await Store.saveSettings();
-        if (typeof window.Netease._saveLocalData === 'function') {
-          await window.Netease._saveLocalData();
-        }
-        UI.setToast('已保存网易云设置', 'success');
-      } catch (e) {
-        UI.setToast('保存失败：' + e.message, 'error');
-      } finally {
-        UI.setBtnLoading(saveBtn, false);
-      }
-    });
-    actions.appendChild(saveBtn);
-    panel.appendChild(actions);
-  }
 };

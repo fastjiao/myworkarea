@@ -33,7 +33,7 @@ if (app.isPackaged) {
 }
 
 // 允许读写的数据文件白名单（防止渲染进程通过文件名参数访问任意文件）
-const ALLOWED_FILES = ['apps.json', 'events.json', 'settings.json', 'sign-tasks.json', 'bg-run.json', 'sign-schedule.json', 'netease-cookie.json', 'netease-data.json'];
+const ALLOWED_FILES = ['apps.json', 'events.json', 'settings.json', 'sign-tasks.json', 'bg-run.json', 'sign-schedule.json'];
 
 // 每个数据文件对应的默认值（文件不存在或损坏时使用）
 const DEFAULT_VALUES = {
@@ -44,11 +44,7 @@ const DEFAULT_VALUES = {
   // 「关闭后继续后台运行」独立文件（主进程持有，避免与渲染进程的 settings.json 互相覆盖）
   'bg-run.json': { enabled: false },
   // 定时自动签到配置：enabled=是否开启，time=每天触发时间（HH:MM，24 小时制）
-  'sign-schedule.json': { enabled: false, time: '09:00' },
-  // 网易云登录 cookie 持久化（扫码一次后下次免扫码）
-  'netease-cookie.json': { cookie: '' },
-  // 网易云用户信息 + 播放列表本地缓存（实现已登录用户秒开，避免每次进页面都走扫码/网络请求）
-  'netease-data.json': {}
+  'sign-schedule.json': { enabled: false, time: '09:00' }
 };
 
 // 签到窗口管理（持久化 Cookie 实现免登录）
@@ -280,7 +276,7 @@ let mainWindow = null;
 // 系统标题栏按钮（最小/最大/关闭）配色：跟随应用主题，避免暗色主题下按钮区突兀
 // 与 styles.css 的 --titlebar-bg / --titlebar-text 两套主题值保持一致
 const TITLEBAR_COLORS = {
-  light: { color: '#E8EEFB', symbolColor: '#1E293B' },
+  light: { color: '#cbdbff', symbolColor: '#1E293B' },
   dark:  { color: '#1E2639', symbolColor: '#E8EDF8' }
 };
 
@@ -371,7 +367,7 @@ function createWindow() {
       symbolColor: _initTb.symbolColor,      // 按钮图标颜色（与 --titlebar-text 一致）
       height: 44                             // 按钮高度与 .titlebar 一致
     },
-    backgroundColor: '#E8EEFB',             // 启动时避免白屏闪烁（与标题栏浅蓝一致）
+    backgroundColor: '#cbdbff',             // 启动时避免白屏闪烁（与标题栏通铺底色一致）
     autoHideMenuBar: true,                  // 隐藏菜单栏，Alt 才显示
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -927,152 +923,6 @@ ipcMain.handle('scan-installed-apps', async () => {
  */
 ipcMain.handle('data:read', async (event, filename) => {
   return readData(filename);
-});
-
-// ======================== 网易云音乐 API 代理 ========================
-// 渲染进程受同源策略限制，无法直接 fetch localhost:3000；
-// 由主进程用 Node http 模块代理请求，既规避跨域，又无需关闭 webSecurity。
-// 说明：本应用只做前端 UI 与接口封装，NeteaseCloudMusicApi 服务需自行启动。
-const NETEASE_API_HOST = 'localhost';
-const NETEASE_API_PORT = 3000;
-
-/**
- * 代理请求网易云音乐 API
- * @param {{ apiPath: string, query?: object, cookie?: string }} arg
- * @returns {Promise<{success: boolean, status?: number, body?: string, setCookie?: string[], message?: string}>}
- */
-ipcMain.handle('netease:fetch', async (event, { apiPath, query, cookie, method, body }) => {
-  return new Promise((resolve) => {
-    // 拼接查询字符串（自动编码中文/特殊字符）
-    const qs = query ? '?' + new URLSearchParams(query).toString() : '';
-    const options = {
-      hostname: NETEASE_API_HOST,
-      port: NETEASE_API_PORT,
-      path: apiPath + qs,
-      method: method || 'GET',
-      headers: { 'User-Agent': 'Mozilla/5.0 (Electron Netease Panel)' }
-    };
-    // 登录后的后续请求需携带 Cookie
-    if (cookie) options.headers['Cookie'] = cookie;
-    // POST 请求体：支持对象（转 form-urlencoded）或字符串
-    let bodyStr = '';
-    if (body) {
-      bodyStr = typeof body === 'string' ? body : new URLSearchParams(body).toString();
-      options.headers['Content-Type'] = 'application/x-www-form-urlencoded';
-      options.headers['Content-Length'] = Buffer.byteLength(bodyStr);
-    }
-
-    const req = http.request(options, (res) => {
-      let data = '';
-      res.setEncoding('utf8');
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        // 回传 set-cookie，便于渲染进程拼接 Cookie
-        const setCookie = res.headers['set-cookie'] || [];
-        resolve({ success: true, status: res.statusCode, body: data, setCookie });
-      });
-    });
-    req.on('error', (err) => {
-      // 服务未启动 / 连接拒绝等
-      resolve({ success: false, message: err.message });
-    });
-    if (bodyStr) req.write(bodyStr);
-    req.end();
-  });
-});
-
-// 网易云 API 子进程引用（由 netease:start-api fork，应用退出时需清理）
-let neteaseApiProc = null;
-// 子进程就绪 Promise：fork 后立即创建，resolve 时表示已 listen（或失败/超时）。
-// 预热 fork 与 ipc handler 共享，避免「已 fork 但未 listen」竞态导致渲染进程拿到 ECONNREFUSED。
-let neteaseApiWhenReady = null;
-
-/**
- * 探测本地 API 端口是否已有服务在响应（复用已有实例，避免重复 fork）
- * @param {number} port 端口号
- * @returns {Promise<boolean>} true 表示服务存活
- */
-function checkApiAlive(port) {
-  return new Promise((resolve) => {
-    // 本地 127.0.0.1 响应很快，400ms 足够；缩短无服务时的空等
-    const req = http.request({ hostname: '127.0.0.1', port, path: '/', method: 'GET', timeout: 400 }, (res) => {
-      res.resume();
-      resolve(true);
-    });
-    req.on('error', () => resolve(false));
-    req.on('timeout', () => { req.destroy(); resolve(false); });
-    req.end();
-  });
-}
-
-/**
- * fork 并等待网易云 API 子进程就绪（统一供预热与 ipc handler 调用）
- * 同时设置 neteaseApiProc 与 neteaseApiWhenReady。
- * @returns {Promise<{running?: boolean, port?: number, failed?: boolean, reason?: string}>}
- */
-function spawnNeteaseApi() {
-  neteaseApiWhenReady = new Promise((resolve) => {
-    const hostPath = path.join(__dirname, 'netease-api-host.js');
-    let settled = false;
-    const done = (r) => { if (!settled) { settled = true; resolve(r); } };
-    let proc;
-    try {
-      proc = fork(hostPath, [], { silent: true });
-    } catch (e) {
-      return done({ failed: true, reason: '启动子进程失败：' + e.message });
-    }
-    neteaseApiProc = proc;
-    // 子进程回报启动结果
-    proc.on('message', (msg) => {
-      if (msg && msg.ok) done({ running: true, port: msg.port || NETEASE_API_PORT });
-      else done({ failed: true, reason: (msg && msg.error) || 'API 服务启动失败' });
-    });
-    // 子进程退出：若尚未 settled 且非 0，视为失败（多为包未安装）
-    proc.on('exit', (code) => {
-      if (neteaseApiProc === proc) neteaseApiProc = null;
-      if (!settled && code !== 0) {
-        done({ failed: true, reason: '子进程异常退出（code=' + code + '），可能未安装 NeteaseCloudMusicApi，请在 my-workbench 目录运行 npm install NeteaseCloudMusicApi' });
-      }
-    });
-    proc.on('error', (err) => done({ failed: true, reason: err.message }));
-    // 启动超时兜底
-    setTimeout(() => done({ failed: true, reason: 'API 服务启动超时' }), 15000);
-  });
-  return neteaseApiWhenReady;
-}
-
-/**
- * 自动启动 NeteaseCloudMusicApi 子进程（fork netease-api-host.js）
- * @returns {Promise<{running?: boolean, port?: number, failed?: boolean, reason?: string}>}
- */
-ipcMain.handle('netease:start-api', async () => {
-  // 已有进程：等待其就绪结果（已就绪则立即返回，spawning 中则等待，避免竞态）
-  if (neteaseApiProc && !neteaseApiProc.killed && neteaseApiWhenReady) {
-    const result = await neteaseApiWhenReady;
-    // 失败且进程已退出：重试一次
-    if (result.failed && (!neteaseApiProc || neteaseApiProc.killed)) {
-      return spawnNeteaseApi();
-    }
-    return result;
-  }
-  // 端口探测：若 3000 已有服务在响应（外部启动 / 上次残留），直接复用
-  if (await checkApiAlive(NETEASE_API_PORT)) {
-    neteaseApiWhenReady = Promise.resolve({ running: true, port: NETEASE_API_PORT });
-    return { running: true, port: NETEASE_API_PORT };
-  }
-  return spawnNeteaseApi();
-});
-
-/**
- * 停止网易云 API 子进程
- */
-ipcMain.handle('netease:stop-api', async () => {
-  if (neteaseApiProc && !neteaseApiProc.killed) {
-    neteaseApiProc.kill();
-    neteaseApiProc = null;
-    return { stopped: true };
-  }
-  return { stopped: false };
 });
 
 /**
@@ -1895,8 +1745,11 @@ ipcMain.handle('sign:panghebox-sign', async () => {
     let token;
     try {
       const loginData = JSON.parse(loginRes.body);
-      token = loginData.token;
-      if (!token) return { ok: false, error: loginData.msg || '获取 token 失败，胖盒登录可能已过期' };
+      // API 响应格式：{ret:{code,msg}, body:{...token...}}
+      const ret = loginData.ret || {};
+      if (ret.code !== 0) return { ok: false, error: ret.msg || '获取 token 失败，胖盒登录可能已过期' };
+      token = (loginData.body || {}).token;
+      if (!token) return { ok: false, error: ret.msg || '获取 token 失败，胖盒登录可能已过期' };
     } catch (e) {
       return { ok: false, error: '登录响应解析失败' };
     }
@@ -1914,8 +1767,11 @@ ipcMain.handle('sign:panghebox-sign', async () => {
     let checkinList;
     try {
       const listData = JSON.parse(listRes.body);
-      checkinList = listData.checkin_list;
-      if (!Array.isArray(checkinList)) return { ok: false, error: listData.msg || '签到列表格式异常' };
+      // API 响应格式：{ret:{code,msg}, body:{checkin_list:[...]}}
+      const ret = listData.ret || {};
+      if (ret.code !== 0) return { ok: false, error: ret.msg || '签到列表格式异常' };
+      checkinList = (listData.body || {}).checkin_list;
+      if (!Array.isArray(checkinList)) return { ok: false, error: ret.msg || '签到列表格式异常' };
     } catch (e) {
       return { ok: false, error: '签到列表解析失败' };
     }
@@ -1923,6 +1779,13 @@ ipcMain.handle('sign:panghebox-sign', async () => {
     const unsigned = checkinList.find(item => !item.date);
     if (!unsigned) {
       return { ok: true, alreadyCheckedIn: true, message: '本周签到已全部完成' };
+    }
+    // 检查今天是否已签到（签到列表中有 date 以今天日期开头的项）
+    const _now = new Date();
+    const _todayStr = _now.getFullYear() + '-' + String(_now.getMonth() + 1).padStart(2, '0') + '-' + String(_now.getDate()).padStart(2, '0');
+    const _todayChecked = checkinList.some(item => item.date && item.date.startsWith(_todayStr));
+    if (_todayChecked) {
+      return { ok: true, alreadyCheckedIn: true, message: '今日已签到（24小时间隔未到，明日可再签）' };
     }
 
     // Step 3: checkinprize 签到
@@ -1936,8 +1799,17 @@ ipcMain.handle('sign:panghebox-sign', async () => {
     let prizeName;
     try {
       const prizeData = JSON.parse(prizeRes.body);
-      prizeName = prizeData.prize_name;
-      if (!prizeName) return { ok: false, error: prizeData.msg || '签到失败' };
+      // API 响应格式：{ret:{code,msg}, body:{prize_name,...}}
+      const ret = prizeData.ret || {};
+      if (ret.code !== 0) {
+        // 24小时间隔未到/已签 = 今天已签过，不当作失败
+        if (ret.msg && (ret.msg.includes('无法领取') || ret.msg.includes('已签'))) {
+          return { ok: true, alreadyCheckedIn: true, message: '今日已签到' };
+        }
+        return { ok: false, error: ret.msg || '签到失败' };
+      }
+      prizeName = (prizeData.body || {}).prize_name;
+      if (!prizeName) return { ok: false, error: ret.msg || '签到失败' };
     } catch (e) {
       return { ok: false, error: '签到响应解析失败' };
     }
@@ -2148,17 +2020,21 @@ ipcMain.handle('sign:hyperdown-cdp-sign', async (event, params) => {
     let ready = await _hdEnsureCdpReady();
     // CDP 不可用 && 提供 exePath → 最小化启动 Hyperdown（开启 CDP 端口），实现静默签到
     if (!ready && exePath && fs.existsSync(exePath)) {
-      const cdpEnv = Object.assign({}, process.env, {
-        WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=' + HD_CDP_PORT
-      });
-      await launchExe(exePath, [], { minimized: true, env: cdpEnv });
-      // 轮询等待 CDP 端口就绪（最多 25s，Hyperdown 冷启动较慢）
-      for (let i = 0; i < 25 && !ready; i++) {
-        await new Promise(r => setTimeout(r, 1000));
-        ready = await _hdEnsureCdpReady();
+      // Hyperdown 已运行但 CDP 端口未开：单例应用启动第二个实例无效，跳过避免 25s 空等
+      const alreadyRunning = await isProcessRunning('Hyperdown.exe');
+      if (!alreadyRunning) {
+        const cdpEnv = Object.assign({}, process.env, {
+          WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=' + HD_CDP_PORT
+        });
+        await launchExe(exePath, [], { minimized: true, env: cdpEnv });
+        // 轮询等待 CDP 端口就绪（最多 25s，Hyperdown 冷启动较慢）
+        for (let i = 0; i < 25 && !ready; i++) {
+          await new Promise(r => setTimeout(r, 1000));
+          ready = await _hdEnsureCdpReady();
+        }
       }
     }
-    if (!ready) return { success: false, message: '无法连接 Hyperdown CDP 调试端口（已尝试自动启动，可能未开启远程调试）' };
+    if (!ready) return { success: false, message: '无法连接 Hyperdown CDP 调试端口（Hyperdown 已运行但未开启远程调试，将回退 UIA 模式）' };
     const targets = await _hdListCdpTargets();
     const target = targets.find(t => t.type === 'page');
     if (!target || !target.webSocketDebuggerUrl) return { success: false, message: 'CDP 无可用页面' };
@@ -2859,7 +2735,11 @@ ipcMain.handle('sign:execute-uia', async (event, params) => {
     } else if (targetProc === 'Hyperdown') {
       // Hyperdown 未运行：最小化启动后继续签到
       // （CDP 静默签到失败时的回退路线；CDP 已启动则走上面的 alreadyRunning 分支）
-      const launchRes = await launchExe(exePath, exeArgs, { minimized: true });
+      // WebView2 需 --force-renderer-accessibility 才能暴露完整 UIA 树供 helper 查找按钮
+      const hdEnv = Object.assign({}, process.env, {
+        WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--force-renderer-accessibility'
+      });
+      const launchRes = await launchExe(exePath, exeArgs, { minimized: true, env: hdEnv });
       results.push({ step: 'launch', ...launchRes, autoLaunched: true });
       if (!launchRes.success) {
         return { success: false, message: '启动 Hyperdown 失败：' + launchRes.message, results };
@@ -2945,7 +2825,12 @@ ipcMain.handle('sign:execute-uia', async (event, params) => {
   const launched = results.find(r => r.step === 'launch');
   if (launched?.alreadyRunning) parts.push('程序已在运行');
   else if (exePath) parts.push('程序已启动');
-  parts.push(uiaResult.message || (uiaResult.success ? '签到成功' : '签到失败'));
+  let uiaMsg = uiaResult.message || (uiaResult.success ? '签到成功' : '签到失败');
+  // Hyperdown 已运行但 UIA 失败：WebView2 可能未开启辅助功能，提示关闭重试
+  if (!success && targetProc === 'Hyperdown' && launched && launched.alreadyRunning) {
+    uiaMsg += '（请关闭 Hyperdown 后重试，签到将以辅助功能模式启动）';
+  }
+  parts.push(uiaMsg);
 
   return { success, message: parts.join('，'), results };
 });
@@ -3597,17 +3482,6 @@ app.whenReady().then(() => {
 
   // 启动定时自动签到调度器（按 sign-schedule.json 配置，每天到点触发）
   startSignScheduler();
-
-  // 预热网易云 API：窗口创建后立即后台启动，用户切到网易云页面时已就绪
-  // 使用 spawnNeteaseApi 统一入口，neteaseApiWhenReady 记录就绪 Promise，
-  // ipc handler 会 await 它，避免「已 fork 但未 listen」竞态
-  checkApiAlive(NETEASE_API_PORT).then((alive) => {
-    if (alive) {
-      neteaseApiWhenReady = Promise.resolve({ running: true, port: NETEASE_API_PORT });
-    } else if (!neteaseApiProc || neteaseApiProc.killed) {
-      spawnNeteaseApi();
-    }
-  });
 
   // macOS 上点击 Dock 图标且没有窗口时，重新创建窗口（其他平台不触发）
   app.on('activate', () => {
