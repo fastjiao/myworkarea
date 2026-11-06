@@ -207,6 +207,19 @@ contextBridge.exposeInMainWorld('workbench', {
   fetchSignCookieWps: () => ipcRenderer.invoke('sign:fetch-cookie-wps'),
 
   /**
+   * 执行华为云开发者社区「成长中心」专用签到（自动获取账号名 + POST sign 接口）
+   * @param {{ cookie: string }} params 完整的 .huaweicloud.com 登录 Cookie
+   * @returns {{ok: boolean, message?: string, alreadySigned?: boolean}}
+   */
+  executeHwgrowSign: (params) => ipcRenderer.invoke('sign:hwgrow-sign', params),
+
+  /**
+   * 抓取所有 .huaweicloud.com 域名的 Cookie（华为云跨子域 Cookie）
+   * @returns {Promise<{success: boolean, cookie?: string, count?: number, message?: string}>}
+   */
+  fetchSignCookieHwgrow: () => ipcRenderer.invoke('sign:fetch-cookie-hwgrow'),
+
+  /**
    * 读取定时自动签到配置
    * @returns {Promise<{enabled: boolean, time: string}>}
    */

@@ -1430,7 +1430,7 @@ function signHttpRequest({ url, method, headers, body, timeout }) {
       let data = '';
       res.setEncoding('utf8');
       res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => resolve({ statusCode: res.statusCode, body: data }));
+      res.on('end', () => resolve({ statusCode: res.statusCode, headers: res.headers, body: data }));
     });
 
     req.on('timeout', () => req.destroy(new Error('请求超时')));
@@ -2073,10 +2073,11 @@ ipcMain.handle('sign:hyperdown-cdp-sign', async (event, params) => {
  * 打开签到登录窗口：加载接口同域首页，用户登录后 cookie 持久化到 sign session
  * @param {{ url: string }} params 签到接口 URL（取其域名定位登录页）
  */
-ipcMain.handle('sign:open-login', async (event, { url }) => {
+ipcMain.handle('sign:open-login', async (event, { url, fullUrl }) => {
   try {
-    const hostname = new URL(url).hostname;
-    const loginUrl = 'https://' + hostname;
+    const parsed = new URL(url);
+    const hostname = parsed.hostname;
+    const loginUrl = fullUrl ? url : ('https://' + hostname);
     const win = getOrCreateSignWindow('login-' + hostname, loginUrl);
     win.show();
     win.focus();
@@ -2268,6 +2269,164 @@ ipcMain.handle('sign:fetch-cookie-wps', async () => {
     const matched = all.filter((c) => {
       const d = String(c.domain).replace(/^\./, '');
       return d.endsWith('wps.cn');
+    });
+    return {
+      success: true,
+      cookie: matched.map((c) => c.name + '=' + c.value).join('; '),
+      count: matched.length
+    };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+});
+
+// 华为云开发者社区「成长中心」签到（HTTP 接口路线）
+// 原理：一键登录抓 .huaweicloud.com Cookie → ① GET /api/get-ainfo 取 csrf 凭证
+//       → ② GET get-personal-info（fwdu 路径需 csrf 头）取 memAlias（华为云账号名）
+//       → ③ POST growth/sign（body {account_name}）→ 按 error_code 判定签到结果。
+//       面向普通用户：登录即可用，账号名自动获取，无需手填。
+
+/** 华为云开发者社区接口域名与关键路径 */
+const HW_GROW_API = 'https://devdata.huaweicloud.com';
+const HW_GROW_GET_AINFO_PATH = '/api/get-ainfo';
+const HW_GROW_PERSONAL_INFO_PATH = '/rest/developer/fwdu/rest/developer/user/hdcommunityservice/v1/member/get-personal-info';
+const HW_GROW_SIGN_PATH = '/rest/developer/fwdu/rest/developer/user/hdcommunitysoservice/v1/growth/sign';
+const HW_GROW_URL = 'https://developer.huaweicloud.com/grow';
+
+
+/**
+ * 导出签到 session 里所有 .huaweicloud.com 域 Cookie 为字符串（签到成功后刷新 task.cookie 用）
+ * @returns {Promise<string>}
+ */
+async function _hwExportCookie() {
+  const all = await getSignSession().cookies.get({});
+  return all.filter((c) => String(c.domain).replace(/^\./, '').endsWith('huaweicloud.com')).map((c) => c.name + '=' + c.value).join('; ');
+}
+
+/** 华为云签到注入页内执行的 JS（在 grow 页面上下文 fetch 签到接口，浏览器自动带全部认证） */
+const HW_GROW_SIGN_JS = `(async () => {
+    const API = 'https://devdata.huaweicloud.com';
+    const pick = (o, ks) => {
+      if (!o) return '';
+      for (const k of ks) if (o[k] != null && o[k] !== '') return String(o[k]);
+      if (o.data && typeof o.data === 'object') for (const k of ks) if (o.data[k] != null && o.data[k] !== '') return String(o.data[k]);
+      return '';
+    };
+    try {
+      const ainfoRes = await fetch(API + '${HW_GROW_GET_AINFO_PATH}', { credentials: 'include' });
+      if (ainfoRes.status >= 300 && ainfoRes.status < 400) return { ok: false, message: '登录态无效（get-ainfo 重定向 ' + ainfoRes.status + '），请重新登录' };
+      const csrf = ainfoRes.headers.get('csrf') || '';
+      let accountName = '';
+      try { accountName = pick(await ainfoRes.json(), ['memAlias', 'account_name', 'account', 'alias']); } catch (e) {}
+      if (!accountName) {
+        if (!csrf) return { ok: false, message: '未获取到 csrf 凭证，请重新登录' };
+        const piRes = await fetch(API + '${HW_GROW_PERSONAL_INFO_PATH}', { headers: { csrf }, credentials: 'include' });
+        try { accountName = pick(await piRes.json(), ['memAlias', 'account_name', 'alias']); } catch (e) {}
+        if (!accountName) return { ok: false, message: '未获取到账号名，请重新登录' };
+      }
+      const signRes = await fetch(API + '${HW_GROW_SIGN_PATH}', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json;charset=UTF-8' },
+        body: JSON.stringify({ account_name: accountName }),
+        credentials: 'include'
+      });
+      let signBody = null;
+      try { signBody = await signRes.json(); } catch (e) {}
+      const ec = (signBody && signBody.error_code) || (signBody && signBody.data && signBody.data.error_code) || '';
+      if (ec === 'HD.67510032' || ec === 'HD.67520011') return { ok: true, message: '今日已签到', alreadySigned: true };
+      if (ec === 'HD.67504001') return { ok: false, message: '账号未实名认证，无法签到。请先在华为云账号中心完成实名认证' };
+      if (ec) return { ok: false, message: (signBody && (signBody.error_msg || signBody.msg || signBody.message)) || ('错误码 ' + ec) };
+      if (signRes.status === 200) return { ok: true, message: '签到成功' };
+      return { ok: false, message: 'HTTP ' + signRes.status };
+    } catch (e) {
+      return { ok: false, message: e.message + '（页面：' + location.href + '）' };
+    }
+  })()`;
+
+/**
+ * 华为云签到核心：开隐藏窗口加载 grow 页面，在页面上下文 executeJavaScript 执行签到 fetch
+ * 浏览器自动带全部认证（cookie/token/CORS/origin），与用户在浏览器手动签到完全一致
+ * @returns {Promise<{ok:boolean,message:string,alreadySigned?:boolean}>}
+ */
+async function _hwDoSignCore() {
+  const win = new BrowserWindow({ show: false, webPreferences: { session: getSignSession(), contextIsolation: true, nodeIntegration: false } });
+  try {
+    await win.loadURL(HW_GROW_URL);
+    await new Promise((r) => setTimeout(r, 2000));
+    const finalUrl = win.webContents.getURL();
+    if (!finalUrl.includes('developer.huaweicloud.com/grow')) {
+      return { ok: false, message: '登录态无效，grow 页面跳转到了 ' + finalUrl + '，请点「登录」重新进入成长中心（等签到日历显示后再关窗）再签到' };
+    }
+    return await win.webContents.executeJavaScript(HW_GROW_SIGN_JS);
+  } catch (err) {
+    return { ok: false, message: err.message };
+  } finally {
+    win.destroy();
+  }
+}
+
+/** 判断签到结果是否为"登录态无效"（需重新登录） */
+function _hwIsAuthInvalid(result) {
+  return !result.ok && /登录态无效|重新登录|未获取到|跳转到了/.test(result.message || '');
+}
+
+/**
+ * 自动打开华为云登录窗口，等待用户登录完成（检测 IAMIdentity cookie 出现）
+ * @param {number} timeout 超时毫秒，默认 120000
+ * @returns {Promise<boolean>} 是否登录成功
+ */
+async function _hwWaitLogin(timeout = 120000) {
+  const win = getOrCreateSignWindow('login-hwgrow-auto', HW_GROW_URL);
+  win.show();
+  win.focus();
+  const sess = getSignSession();
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    await new Promise((r) => setTimeout(r, 2000));
+    if (win.isDestroyed()) return false;
+    const cookies = await sess.cookies.get({});
+    const hasIdentity = cookies.some((c) => c.name === 'IAMIdentity' && c.value);
+    if (hasIdentity) {
+      win.hide();
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 华为云成长中心签到
+ * 原理：签到前把 task.cookie 注入 session 补齐登录态 → 隐藏窗口加载 grow 页面 → 页面上下文 fetch 签到
+ *       登录态无效时自动弹出登录窗口，登录完成后自动重试签到，无需用户手动再点一次
+ */
+ipcMain.handle('sign:hwgrow-sign', async () => {
+  let result = await _hwDoSignCore();
+
+  // 登录态无效 → 自动弹登录窗口，登录完成后自动重试签到
+  if (_hwIsAuthInvalid(result)) {
+    const loggedIn = await _hwWaitLogin();
+    if (loggedIn) {
+      result = await _hwDoSignCore();
+      if (result.ok) {
+        result.cookie = await _hwExportCookie();
+      }
+    } else {
+      result.message = '登录态无效，已打开登录窗口但未检测到登录完成，请手动登录后重试';
+    }
+  }
+
+  return result;
+});
+
+/**
+ * 抓取所有 .huaweicloud.com 域名的 Cookie（华为云开发者社区签到跨子域 Cookie）
+ */
+ipcMain.handle('sign:fetch-cookie-hwgrow', async () => {
+  try {
+    const all = await getSignSession().cookies.get({});
+    const matched = all.filter((c) => {
+      const d = String(c.domain).replace(/^\./, '');
+      return d.endsWith('huaweicloud.com');
     });
     return {
       success: true,
@@ -3286,6 +3445,31 @@ function stopSignScheduler() {
   }
 }
 
+/**
+ * 华为云成长中心登录态保活：定期后台静默加载 grow 页面刷新 session
+ * 避免 session 里的 cookie 长期不用被服务端失效；签到前也会注入 task.cookie 兜底
+ */
+let hwKeepAliveTimer = null;
+function startHwGrowKeepAlive() {
+  if (hwKeepAliveTimer) clearInterval(hwKeepAliveTimer);
+  const doKeepAlive = async () => {
+    try {
+      const tasks = readData('sign-tasks.json');
+      const hw = (Array.isArray(tasks) ? tasks : []).find((t) => t && t.taskType === 'hwgrow');
+      if (!hw) return;
+      const win = new BrowserWindow({ show: false, webPreferences: { session: getSignSession(), contextIsolation: true, nodeIntegration: false } });
+      try {
+        await win.loadURL(HW_GROW_URL);
+        await new Promise((r) => setTimeout(r, 1500));
+      } finally {
+        if (!win.isDestroyed()) win.destroy();
+      }
+    } catch (e) {}
+  };
+  doKeepAlive();
+  hwKeepAliveTimer = setInterval(doKeepAlive, 4 * 60 * 60 * 1000);
+}
+
 // 定时签到配置读写 + exe 路径定位 IPC
 ipcMain.handle('sign:schedule-get', async () => {
   return readData('sign-schedule.json');
@@ -3482,6 +3666,9 @@ app.whenReady().then(() => {
 
   // 启动定时自动签到调度器（按 sign-schedule.json 配置，每天到点触发）
   startSignScheduler();
+
+  // 华为云成长中心登录态保活（定期后台静默刷新 session，减少签到时登录态失效）
+  startHwGrowKeepAlive();
 
   // macOS 上点击 Dock 图标且没有窗口时，重新创建窗口（其他平台不触发）
   app.on('activate', () => {

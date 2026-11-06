@@ -176,14 +176,18 @@ body {
 /* 自定义标题栏：毛玻璃叠加在内容之上，与主内容区融为一体（EchoMusic 风格）
    半透明 + backdrop-blur：内容滚动到标题栏下方时被模糊，不遮挡顶部按钮
    -webkit-app-region: drag：系统接管拖拽/Aero Snap/双击最大化
-   right: 140px：避让系统绘制的最小/最大/关闭按钮（3 按钮 × ~46px） */
+   right: 0 铺到窗口右边缘：系统按钮由 OS 绘制在最上层盖住右侧，
+   消除原 right:140px 硬编码偏移与实际按钮宽度不一致导致的缝隙露底色（Win11≈138px/Win10≈120px/DPI 缩放均不准）。
+   padding-right 用 Window Controls Overlay API 的 env(titlebar-area-width) 精确避让，
+   fallback 140px 兼容未启用 WCO 的环境。 */
 .titlebar {
   position: absolute;
   top: 0;
   left: 210px; /* 只覆盖主内容区顶部，不覆盖侧边栏（让侧边栏内容可向上移到顶部） */
-  right: 140px; /* 避让系统标题栏按钮 */
+  right: 0; /* 铺到窗口右边缘，系统按钮由 OS 绘制在最上层盖住，无缝隙不露底色 */
   height: 44px;
   padding: 0 8px 0 14px;
+  padding-right: env(titlebar-area-width, 140px); /* WCO 精确避让系统按钮区，覆盖上方 8px */
   background: var(--titlebar-bg); /* 半透明毛玻璃，内容滚到下方时模糊不穿透 */
   backdrop-filter: blur(20px) saturate(150%);
   -webkit-backdrop-filter: blur(20px) saturate(150%);

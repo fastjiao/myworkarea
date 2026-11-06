@@ -78,8 +78,8 @@ window.Sign = {
     const head = UI.el('div', 'skill-card-head');
     head.appendChild(UI.el('div', 'skill-name', task.name));
 
-    const typeBadge = task.taskType === 'wps' ? 'WPS' : (task.taskType === 'uia' ? 'UIA' : (task.taskType === 'workbuddy' ? 'API' : (task.taskType === 'panghebox' ? 'API' : '网页')));
-    const typeClass = task.taskType === 'wps' ? 'sign-type-wps' : (task.taskType === 'uia' ? 'sign-type-uia' : (task.taskType === 'workbuddy' ? 'sign-type-wps' : (task.taskType === 'panghebox' ? 'sign-type-wps' : 'sign-type-web')));
+    const typeBadge = task.taskType === 'wps' ? 'WPS' : (task.taskType === 'uia' ? 'UIA' : (task.taskType === 'workbuddy' ? 'API' : (task.taskType === 'panghebox' ? 'API' : (task.taskType === 'hwgrow' ? 'API' : '网页'))));
+    const typeClass = task.taskType === 'wps' ? 'sign-type-wps' : (task.taskType === 'uia' ? 'sign-type-uia' : (task.taskType === 'workbuddy' ? 'sign-type-wps' : (task.taskType === 'panghebox' ? 'sign-type-wps' : (task.taskType === 'hwgrow' ? 'sign-type-wps' : 'sign-type-web'))));
     const typeLabel = UI.el('span', 'sign-type-badge ' + typeClass, typeBadge);
     head.appendChild(typeLabel);
 
@@ -97,6 +97,8 @@ window.Sign = {
       card.appendChild(UI.el('div', 'sign-meta', '桌面应用签到（UIA 自动触发，不碰鼠标）'));
     } else if (task.taskType === 'workbuddy') {
       card.appendChild(UI.el('div', 'sign-meta', 'API 签到（从进程内存提取 token，自动领取积分）'));
+    } else if (task.taskType === 'hwgrow') {
+      card.appendChild(UI.el('div', 'sign-meta', '华为云开发者社区每日签到（自动获取账号名）'));
     } else if (task.taskType !== 'wps') {
       const urlLine = UI.el('div', 'sign-url-line');
       const method = (task.method || 'GET').toUpperCase();
@@ -222,6 +224,16 @@ window.Sign = {
         };
       } else if (task.taskType === 'panghebox') {
         const res = await window.workbench.executePangheboxSign();
+        verdict = {
+          success: res.ok,
+          message: res.message || (res.ok ? '签到成功' : '签到失败')
+        };
+      } else if (task.taskType === 'hwgrow') {
+        const res = await window.workbench.executeHwgrowSign({ cookie: task.cookie || '' });
+        if (res && res.ok && res.cookie) {
+          task.cookie = res.cookie;
+          await this._persist();
+        }
         verdict = {
           success: res.ok,
           message: res.message || (res.ok ? '签到成功' : '签到失败')
@@ -376,11 +388,14 @@ window.Sign = {
     optHyperdown.value = 'hyperdown';
     const optWorkbuddy = UI.el('option', '', 'WorkBuddy 领积分');
     optWorkbuddy.value = 'workbuddy';
+    const optHwgrow = UI.el('option', '', '华为云开发者社区签到');
+    optHwgrow.value = 'hwgrow';
     const optCustom = UI.el('option', '', '高级：自定义接口');
     optCustom.value = 'custom';
     templateSelect.appendChild(optWps);
     templateSelect.appendChild(optHyperdown);
     templateSelect.appendChild(optWorkbuddy);
+    templateSelect.appendChild(optHwgrow);
     templateSelect.appendChild(optCustom);
     // 回填：编辑已有任务时根据 taskType / procName 选对应预设
     let initTpl = 'wps';
@@ -389,6 +404,8 @@ window.Sign = {
       initTpl = pn === 'hyperdown' ? 'hyperdown' : (pn.indexOf('workbuddy') >= 0 ? 'workbuddy' : 'hyperdown');
     } else if (task?.taskType === 'workbuddy') {
       initTpl = 'workbuddy';
+    } else if (task?.taskType === 'hwgrow') {
+      initTpl = 'hwgrow';
     } else if (task?.taskType === 'web') {
       initTpl = 'custom';
     }
@@ -633,9 +650,10 @@ window.Sign = {
       const wps = tpl === 'wps';
       const hyperdown = tpl === 'hyperdown';
       const workbuddy = tpl === 'workbuddy';
+      const hwgrow = tpl === 'hwgrow';
       const custom = tpl === 'custom';
       const needPath = hyperdown;          // 仅 Hyperdown 需要选程序位置
-      const needLogin = wps || custom;     // WPS 和自定义需要登录
+      const needLogin = wps || custom || hwgrow;     // WPS/华为云/自定义需要登录
       urlItem.style.display = custom ? '' : 'none';
       advanced.style.display = custom ? '' : 'none';
       uiaItem.style.display = needPath ? '' : 'none';
@@ -644,6 +662,7 @@ window.Sign = {
       if (hyperdown && !nameInput.value.trim()) nameInput.value = 'Hyperdown 签到';
       if (hyperdown && !procNameInput.value.trim()) procNameInput.value = 'Hyperdown';
       if (workbuddy && !nameInput.value.trim()) nameInput.value = 'WorkBuddy 领积分';
+      if (hwgrow && !nameInput.value.trim()) nameInput.value = '华为云开发者社区';
     };
     templateSelect.addEventListener('change', applyTemplate);
     applyTemplate();
@@ -651,14 +670,15 @@ window.Sign = {
     // 一键登录：打开窗口 → 轮询抓 cookie
     loginBtn.addEventListener('click', async () => {
       const wps = templateSelect.value === 'wps';
-      // WPS 模式用固定登录地址，自定义模式用用户填的 URL
-      const loginUrl = wps ? 'https://personal-act.wps.cn' : urlInput.value.trim();
+      const hwgrow = templateSelect.value === 'hwgrow';
+      // WPS/华为云模式用固定登录地址，自定义模式用用户填的 URL
+      const loginUrl = wps ? 'https://personal-act.wps.cn' : (hwgrow ? 'https://developer.huaweicloud.com/grow' : urlInput.value.trim());
       if (!/^https?:\/\//i.test(loginUrl)) { UI.setToast('请先填写正确的签到接口地址', 'error'); return; }
       loginBtn.disabled = true;
       cookieStatus.style.color = 'var(--text-muted)';
       cookieStatus.textContent = '请在弹出网页中登录，登录后关掉窗口…';
       try {
-        const openRes = await window.workbench.openSignLogin({ url: loginUrl });
+        const openRes = await window.workbench.openSignLogin({ url: loginUrl, fullUrl: hwgrow });
         if (!openRes || !openRes.success) {
           cookieStatus.textContent = '打开登录页失败';
           UI.setToast(openRes && openRes.message ? openRes.message : '打开失败', 'error');
@@ -670,7 +690,7 @@ window.Sign = {
           // WPS 模式抓所有 .wps.cn 域名 Cookie，自定义模式按 URL 域名过滤
           const res = wps
             ? await window.workbench.fetchSignCookieWps()
-            : await window.workbench.fetchSignCookie({ url: loginUrl });
+            : (hwgrow ? await window.workbench.fetchSignCookieHwgrow() : await window.workbench.fetchSignCookie({ url: loginUrl }));
           if (res && res.success && res.count > 0) {
             if (res.count === lastCount) stable++; else { stable = 0; lastCount = res.count; }
             cookieStatus.textContent = '检测到登录（' + res.count + ' 项）…';
@@ -715,7 +735,7 @@ window.Sign = {
       if (!name) { UI.setToast('请填写任务名称', 'error'); return; }
 
       const tpl = templateSelect.value;
-      const needLogin = tpl === 'wps' || tpl === 'custom';
+      const needLogin = tpl === 'wps' || tpl === 'custom' || tpl === 'hwgrow';
       const cookie = cookieInput.value.trim();
       if (needLogin && !cookie) { UI.setToast('请先点「一键登录」', 'error'); return; }
 
@@ -756,6 +776,9 @@ window.Sign = {
         } else if (tpl === 'wps') {
           // WPS 每日签到：只需名称 + Cookie
           data = { taskType: 'wps', name, cookie };
+        } else if (tpl === 'hwgrow') {
+          // 华为云开发者社区签到：只需名称 + Cookie（账号名签到时自动获取）
+          data = { taskType: 'hwgrow', name, cookie };
         } else {
           // 高级：自定义 HTTP 接口签到
           const url = urlInput.value.trim();
